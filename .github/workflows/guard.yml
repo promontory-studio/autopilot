@@ -1,0 +1,100 @@
+name: guard
+
+# Checks an automated pull request against the calling repository's `.github/autopilot.json`:
+# forbidden paths, diff size, weakened tests, and new tests that pass without their own fix.
+#
+# Call it from a job that is NOT skipped for human pull requests. A required check that reports
+# SKIPPED blocks a merge forever, so the decision "this author is not automated" belongs in a
+# step-level `if:` or in the `authors` input, never in a job-level one.
+
+on:
+  workflow_call:
+    inputs:
+      base-ref:
+        description: Branch the pull request merges into.
+        required: true
+        type: string
+      head-sha:
+        description: Commit to check. Use the pull request head, not the merge commit.
+        required: true
+        type: string
+      authors:
+        description: Comma-separated logins the guard applies to. Empty applies it to everyone.
+        type: string
+        default: ""
+      pr-author:
+        description: Login that opened the pull request.
+        type: string
+        default: ""
+      config-path:
+        type: string
+        default: .github/autopilot.json
+      node-version:
+        type: string
+        default: "22"
+      install:
+        description: How to install the caller's dependencies so its tests can run.
+        type: string
+        default: npm ci
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - id: applies
+        run: |
+          if [ -z "$AUTHORS" ] || printf '%s' "$AUTHORS" | tr ',' '\n' | grep -qxF "$AUTHOR"; then
+            echo "yes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "The guard covers [$AUTHORS]; this pull request is $AUTHOR. Nothing to check."
+          fi
+        env:
+          AUTHORS: ${{ inputs.authors }}
+          AUTHOR: ${{ inputs.pr-author }}
+
+      # Self-locating: `job_workflow_ref` is owner/repo/.github/workflows/<file>@<ref> for the
+      # workflow being called, so the host never has to be told its own name.
+      - id: host
+        if: steps.applies.outputs.yes == 'true'
+        run: |
+          ref='${{ github.job_workflow_ref }}'
+          echo "repo=${ref%%/.github/*}" >> "$GITHUB_OUTPUT"
+
+      - if: steps.applies.outputs.yes == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ${{ steps.host.outputs.repo }}
+          ref: ${{ github.job_workflow_sha }}
+          path: .autopilot-host
+          persist-credentials: false
+
+      # Full history: the guard diffs the head against the base and re-runs tests at the base.
+      - if: steps.applies.outputs.yes == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.head-sha }}
+          fetch-depth: 0
+          path: caller
+          persist-credentials: false
+
+      - if: steps.applies.outputs.yes == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - if: steps.applies.outputs.yes == 'true' && inputs.install != ''
+        working-directory: caller
+        run: ${{ inputs.install }} || npm install
+
+      - if: steps.applies.outputs.yes == 'true'
+        working-directory: .autopilot-host
+        run: npm ci
+
+      - if: steps.applies.outputs.yes == 'true'
+        working-directory: .autopilot-host
+        run: >
+          npx tsx src/guard-main.ts
+          --repo "$GITHUB_WORKSPACE/caller"
+          --base "origin/${{ inputs.base-ref }}"
+          --config "${{ inputs.config-path }}"

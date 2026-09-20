@@ -1,0 +1,26 @@
+name: codeql-scan
+description: Run CodeQL against one language and upload the result.
+
+inputs:
+  language:
+    default: javascript-typescript
+  queries:
+    description: Extra query suites, e.g. `security-extended`.
+    default: ""
+  build-mode:
+    default: none
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      with:
+        persist-credentials: false
+    - uses: github/codeql-action/init@d8073367669608af8fbcc5f63dd0a0d52bb90cff # v4
+      with:
+        languages: ${{ inputs.language }}
+        build-mode: ${{ inputs.build-mode }}
+        queries: ${{ inputs.queries }}
+    - uses: github/codeql-action/analyze@d8073367669608af8fbcc5f63dd0a0d52bb90cff # v4
+      with:
+        category: /language:${{ inputs.language }}

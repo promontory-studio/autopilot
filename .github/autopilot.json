@@ -1,0 +1,14 @@
+{
+  "agentAuthor": "autopilot[bot]",
+  "botAuthor": "dependabot[bot]",
+  "maxLines": 400,
+  "forbidden": ["schema/**"],
+  "apps": [
+    {
+      "path": ".",
+      "run": ["npx", "vitest", "run"],
+      "tests": ["tests/**"],
+      "unitTests": ["tests/**"]
+    }
+  ]
+}

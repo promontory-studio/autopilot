@@ -1,0 +1,85 @@
+name: notify-failure
+
+# One implementation of "an unattended workflow failed, tell someone". A recurrence comments on
+# the open issue carrying the same title rather than filing a second one, so a workflow that is
+# red every night produces one thread instead of thirty.
+
+on:
+  workflow_call:
+    inputs:
+      title:
+        description: Issue title. A recurrence comments on the open issue with this exact title.
+        required: true
+        type: string
+      context:
+        description: One line naming what failed, shown under the run link.
+        type: string
+        default: ""
+      issue-repo:
+        description: Where to file. Empty files on the calling repository.
+        type: string
+        default: ""
+      label:
+        type: string
+        default: ci-failure
+      assignee:
+        type: string
+        default: ""
+      app-id:
+        description: Needed only to file into another repository.
+        type: string
+        default: ""
+    secrets:
+      app-key:
+        required: false
+      issue-token:
+        required: false
+
+jobs:
+  file:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      issues: write
+    steps:
+      - id: target
+        env:
+          REPO: ${{ inputs.issue-repo }}
+        run: |
+          repo="${REPO:-$GITHUB_REPOSITORY}"
+          echo "repo=$repo" >> "$GITHUB_OUTPUT"
+          echo "owner=${repo%%/*}" >> "$GITHUB_OUTPUT"
+          echo "name=${repo##*/}" >> "$GITHUB_OUTPUT"
+      - id: app
+        if: inputs.issue-repo != '' && inputs.app-id != ''
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ inputs.app-id }}
+          private-key: ${{ secrets.app-key }}
+          owner: ${{ steps.target.outputs.owner }}
+          repositories: ${{ steps.target.outputs.name }}
+      # The title is free text and reaches the shell as an environment variable, never as a
+      # `${{ }}` interpolation inside the script.
+      - env:
+          GH_TOKEN: ${{ steps.app.outputs.token || secrets.issue-token || github.token }}
+          REPO: ${{ steps.target.outputs.repo }}
+          TITLE: ${{ inputs.title }}
+          CONTEXT: ${{ inputs.context }}
+          LABEL: ${{ inputs.label }}
+          ASSIGNEE: ${{ inputs.assignee }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          body=$(printf 'Failed run: %s\n\n%s\n\nEvent: %s, ref: %s, sha: %s' \
+            "$RUN_URL" "$CONTEXT" "$EVENT" "$REF" "$SHA")
+          existing=$(gh issue list -R "$REPO" --state open --label "$LABEL" --limit 100 \
+            --json number,title --jq 'first(.[] | select(.title == env.TITLE) | .number) // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" -R "$REPO" --body "$body"
+          else
+            gh issue create -R "$REPO" --title "$TITLE" --body "$body" --label "$LABEL" \
+              ${ASSIGNEE:+--assignee "$ASSIGNEE"}
+          fi

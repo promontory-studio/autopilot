@@ -1,0 +1,194 @@
+name: promote
+
+# Opens the integration-branch -> release-branch pull request once the integration branch has
+# soaked quietly: CI green on its tip, nothing newer than the soak window, and no error report
+# naming a build in the range. The reviewer merges it like any other pull request.
+#
+# Paths listed in `keep-paths` are restored from the release branch, for the files that are
+# deliberately different there (deployment bindings, environment config) and must not be
+# overwritten by the promotion.
+
+on:
+  workflow_call:
+    inputs:
+      mode:
+        description: "`off` does nothing; anything else opens the pull request."
+        type: string
+        default: dry-run
+      base-branch:
+        description: Branch being promoted into.
+        type: string
+        default: main
+      head-branch:
+        description: Branch being promoted.
+        type: string
+        default: dev
+      branch-prefix:
+        type: string
+        default: promote/
+      soak-hours:
+        type: number
+        default: 24
+      keep-paths:
+        description: Newline-separated paths restored from the base branch.
+        type: string
+        default: ""
+      report-repo:
+        description: Where runtime error reports are filed. Empty skips that half of the gate.
+        type: string
+        default: ""
+      report-label:
+        type: string
+        default: client-error
+      canary-label:
+        description: Label on the issue that proves the report pipeline is still alive. Empty
+          skips the liveness check, which a caller with no pipeline wants.
+        type: string
+        default: ""
+      canary-max-age-hours:
+        type: number
+        default: 8
+      app-id:
+        description: App to open the pull request as, so its checks actually run.
+        type: string
+        default: ""
+      node-version:
+        type: string
+        default: "22"
+    secrets:
+      app-key:
+        required: false
+      report-token:
+        required: false
+
+concurrency:
+  group: promote-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    if: inputs.mode != 'off'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - id: app
+        if: inputs.app-id != ''
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ inputs.app-id }}
+          private-key: ${{ secrets.app-key }}
+
+      - id: report-app
+        if: inputs.app-id != '' && inputs.report-repo != ''
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ inputs.app-id }}
+          private-key: ${{ secrets.app-key }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ inputs.report-repo }}
+
+      - id: host
+        run: |
+          ref='${{ github.job_workflow_ref }}'
+          echo "repo=${ref%%/.github/*}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ${{ steps.host.outputs.repo }}
+          ref: ${{ github.job_workflow_sha }}
+          path: .autopilot-host
+          persist-credentials: false
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.base-branch }}
+          fetch-depth: 0
+          path: caller
+          token: ${{ steps.app.outputs.token || github.token }}
+
+      - name: One promotion at a time
+        id: open
+        working-directory: caller
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token || github.token }}
+          PREFIX: ${{ inputs.branch-prefix }}
+        run: |
+          set -euo pipefail
+          n=$(gh pr list --base "${{ inputs.base-branch }}" --state open --json headRefName \
+            --jq "[.[] | select(.headRefName | startswith(\"$PREFIX\"))] | length")
+          echo "open=$n" >> "$GITHUB_OUTPUT"
+          [ "$n" = 0 ] || echo "A promotion pull request is already open; leaving it alone."
+
+      - if: steps.open.outputs.open == '0'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - if: steps.open.outputs.open == '0'
+        working-directory: .autopilot-host
+        run: npm ci
+
+      - name: Soak gate
+        id: gate
+        if: steps.open.outputs.open == '0'
+        working-directory: .autopilot-host
+        env:
+          GH_TOKEN: ${{ steps.report-app.outputs.token || steps.app.outputs.token || secrets.report-token || github.token }}
+        run: |
+          set -euo pipefail
+          git -C "$GITHUB_WORKSPACE/caller" fetch --quiet origin \
+            "${{ inputs.base-branch }}" "${{ inputs.head-branch }}"
+          if npx tsx src/promotion-gate-main.ts \
+              --dir "$GITHUB_WORKSPACE/caller" \
+              --repo "$GITHUB_REPOSITORY" \
+              --base "origin/${{ inputs.base-branch }}" \
+              --head "origin/${{ inputs.head-branch }}" \
+              --soak-hours "${{ inputs.soak-hours }}" \
+              --canary-max-age-hours "${{ inputs.canary-max-age-hours }}" \
+              ${{ inputs.report-repo && format('--report-repo {0} --report-label {1}', inputs.report-repo, inputs.report-label) }} \
+              ${{ inputs.canary-label && format('--canary-label {0}', inputs.canary-label) }}; then
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open the promotion pull request
+        if: steps.gate.outputs.go == 'true'
+        working-directory: caller
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token || github.token }}
+          BASE: ${{ inputs.base-branch }}
+          HEAD: ${{ inputs.head-branch }}
+          PREFIX: ${{ inputs.branch-prefix }}
+          KEEP: ${{ inputs.keep-paths }}
+          SOAK: ${{ inputs.soak-hours }}
+        run: |
+          set -euo pipefail
+          branch="${PREFIX}auto-$(date -u +%F)"
+          git config user.name "${GITHUB_ACTOR}"
+          git config user.email "${GITHUB_ACTOR_ID}+${GITHUB_ACTOR}@users.noreply.github.com"
+          git switch -c "$branch"
+          if ! git merge --no-ff --no-commit "origin/$HEAD"; then
+            git merge --abort
+            echo "::error::$HEAD does not merge cleanly into $BASE; promote by hand"
+            exit 1
+          fi
+          kept=""
+          while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            git checkout "origin/$BASE" -- "$path"
+            kept="$kept
+          - \`$path\` is $BASE's, unchanged."
+          done <<<"$KEEP"
+          git commit -m "Promote $HEAD to $BASE after a quiet soak
+
+          Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
+          git push origin "$branch"
+          gh pr create --base "$BASE" --head "$branch" \
+            --title "Promote $HEAD to $BASE ($(date -u +%F))" \
+            --body "Automatic promotion: \`$HEAD\` has soaked ${SOAK}h, CI is green on its tip, and no error report names a build in this range.$kept
+
+          Label this pull request \`hold\` to stop it merging.
+
+          🤖 Generated with [Claude Code](https://claude.com/claude-code)"

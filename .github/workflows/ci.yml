@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: ./.github/actions/setup-node-ci
+      - run: npm run typecheck
+      - run: npm test
+      # The boundary is the product here, so it is a check and not a review note.
+      - run: ./scripts/no-entity-leak.sh
+      - run: ./scripts/no-entity-leak.test.sh
+
+  # Dogfooding: the guard that every caller gets, run against this repository's own pull requests.
+  guard:
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/guard.yml
+    with:
+      base-ref: ${{ github.base_ref }}
+      head-sha: ${{ github.event.pull_request.head.sha }}
+      authors: dependabot[bot],autopilot[bot]
+      pr-author: ${{ github.event.pull_request.user.login }}
+
+  codeql:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: ./.github/actions/codeql-scan

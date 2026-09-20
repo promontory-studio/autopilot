@@ -1,0 +1,187 @@
+name: review
+
+# Reviews an open pull request once its CI has finished, approves it when it is clean, and — only
+# at `mode: on` — enables auto-merge. The merge is decided by the shell here, not by the model: it
+# re-reads the pull request and requires an approval that still sits at the head it reviewed.
+#
+# Call this from a `workflow_run` trigger, never from inside the CI run it waits on: a job that
+# watches the checks of its own run waits on itself and the pull request never merges.
+
+on:
+  workflow_call:
+    inputs:
+      mode:
+        description: "`off` does nothing, `dry-run` reviews and approves, `on` also merges."
+        type: string
+        default: dry-run
+      pr-number:
+        required: true
+        type: string
+      head-sha:
+        description: Head the CI run tested. The merge refuses to fire at any other head.
+        required: true
+        type: string
+      ci-conclusion:
+        required: true
+        type: string
+      head-branch:
+        type: string
+        default: ""
+      reviewer-pattern:
+        description: Regex an approving review's author must match for the merge to fire.
+        type: string
+        default: claude
+      merge-method:
+        type: string
+        default: squash
+      merge-method-by-base:
+        description: 'JSON overriding the method per base branch, e.g. {"main":"merge"}.'
+        type: string
+        default: "{}"
+      hold-labels:
+        description: Comma-separated labels that veto the merge.
+        type: string
+        default: hold,autopilot:needs-human
+      needs-human-label:
+        type: string
+        default: autopilot:needs-human
+      allowed-bots:
+        description: Bot logins whose pull requests the review action is allowed to act on.
+        type: string
+        default: dependabot[bot]
+      model:
+        type: string
+        default: ""
+      app-id:
+        description: GitHub App to merge as. Without one the merge is skipped, because a merge
+          pushed with GITHUB_TOKEN starts no downstream workflow.
+        type: string
+        default: ""
+      repair-repo:
+        description: Repository to send a `repository_dispatch` to when CI failed on an automated
+          branch. Empty sends nothing.
+        type: string
+        default: ""
+      repair-event:
+        type: string
+        default: autopilot-repair
+      repair-branch-prefix:
+        type: string
+        default: dependabot/
+    secrets:
+      anthropic-api-key:
+        required: true
+      app-key:
+        required: false
+      repair-token:
+        description: Used for the dispatch when no App is configured.
+        required: false
+
+jobs:
+  review:
+    if: inputs.mode != 'off'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.head-sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: anthropics/claude-code-action@b949468893d8bba436c9c71ea860b1f5f344804e # v1
+        with:
+          anthropic_api_key: ${{ secrets.anthropic-api-key }}
+          allowed_bots: ${{ inputs.allowed-bots }}
+          claude_args: >-
+            ${{ inputs.model && format('--model {0} ', inputs.model) }}--allowedTools
+            "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(gh pr diff:*),Bash(gh pr comment:*),Bash(gh pr review:*),Bash(gh pr edit:*)"
+          prompt: |
+            The CI workflow just finished (conclusion: ${{ inputs.ci-conclusion }})
+            for PR #${{ inputs.pr-number }} in this repo.
+
+            - If CI did not succeed: comment on the PR with
+              `gh pr comment ${{ inputs.pr-number }} -b "CI is failing, not reviewing yet."`
+              and stop — do not approve or merge.
+            - Otherwise, review the PR for correctness bugs and for
+              reuse/simplification/efficiency issues, at the bar of a high-effort code
+              review. Read the diff with `gh pr diff ${{ inputs.pr-number }}`.
+              - If there are no blocking issues: approve with
+                `gh pr review ${{ inputs.pr-number }} --approve -b "<one-line summary of
+                what you checked>"`. Do not merge; a later step does.
+              - If there are blocking issues: post them as one review comment with
+                `gh pr comment ${{ inputs.pr-number }}` (most severe first, with
+                file:line references) and do not approve or merge.
+              - If you are not confident in the verdict, say so in a comment, run
+                `gh pr edit ${{ inputs.pr-number }} --add-label ${{ inputs.needs-human-label }}`,
+                and do not approve or merge.
+
+      - id: app
+        if: inputs.mode == 'on' && inputs.app-id != ''
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ inputs.app-id }}
+          private-key: ${{ secrets.app-key }}
+
+      - name: Merge if approved at this head
+        if: steps.app.outputs.token != ''
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          PR: ${{ inputs.pr-number }}
+          HEAD_SHA: ${{ inputs.head-sha }}
+          PATTERN: ${{ inputs.reviewer-pattern }}
+          HOLD: ${{ inputs.hold-labels }}
+          METHOD: ${{ inputs.merge-method }}
+          BY_BASE: ${{ inputs.merge-method-by-base }}
+        run: |
+          set -euo pipefail
+          pr=$(gh pr view "$PR" -R "$GITHUB_REPOSITORY" --json labels,headRefOid,latestReviews,baseRefName)
+          approved=$(jq --arg sha "$HEAD_SHA" --arg p "$PATTERN" \
+            '.headRefOid == $sha and any(.latestReviews[]; .state == "APPROVED" and (.author.login | test($p)))' <<<"$pr")
+          held=$(jq --arg h "$HOLD" '[$h | split(",")[]] as $bad | any(.labels[].name; . as $l | $bad | index($l))' <<<"$pr")
+          base=$(jq -r .baseRefName <<<"$pr")
+          method=$(jq -r --arg b "$base" --arg d "$METHOD" '.[$b] // $d' <<<"$BY_BASE")
+          echo "approved=$approved held=$held base=$base method=$method"
+          if [ "$approved" = true ] && [ "$held" != true ]; then
+            gh pr merge "$PR" -R "$GITHUB_REPOSITORY" --auto "--$method" --delete-branch
+          fi
+
+  repair:
+    # Keyed on the branch rather than the author, so a repair that still fails CI is dispatched
+    # again; the receiving repository is what caps the attempts.
+    if: >
+      inputs.mode != 'off' && inputs.repair-repo != '' &&
+      inputs.ci-conclusion == 'failure' &&
+      startsWith(inputs.head-branch, inputs.repair-branch-prefix)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - id: target
+        run: echo "owner=${REPO%%/*}" >> "$GITHUB_OUTPUT"; echo "name=${REPO##*/}" >> "$GITHUB_OUTPUT"
+        env:
+          REPO: ${{ inputs.repair-repo }}
+      - id: app
+        if: inputs.app-id != ''
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ inputs.app-id }}
+          private-key: ${{ secrets.app-key }}
+          owner: ${{ steps.target.outputs.owner }}
+          repositories: ${{ steps.target.outputs.name }}
+      - env:
+          GH_TOKEN: ${{ steps.app.outputs.token || secrets.repair-token }}
+          TARGET: ${{ inputs.repair-repo }}
+          EVENT: ${{ inputs.repair-event }}
+          PR: ${{ inputs.pr-number }}
+          BRANCH: ${{ inputs.head-branch }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$TARGET/dispatches" -f "event_type=$EVENT" \
+            -F "client_payload[pr]=$PR" \
+            -f "client_payload[branch]=$BRANCH" \
+            -f "client_payload[repo]=$GITHUB_REPOSITORY"

@@ -1,0 +1,48 @@
+name: setup-node-ci
+description: Check out a repository, install Node, and install its dependencies.
+
+inputs:
+  repository:
+    description: Repository to check out. Defaults to the one running the job.
+    default: ""
+  ref:
+    description: Ref or SHA to check out.
+    default: ""
+  path:
+    description: Directory to check out into.
+    default: ""
+  fetch-depth:
+    description: History depth. 0 fetches all of it, which a diff against a base branch needs.
+    default: "1"
+  token:
+    description: Token for the checkout.
+    default: ${{ github.token }}
+  node-version:
+    default: "22"
+  install:
+    description: Install command. Empty skips installation entirely.
+    default: npm ci
+  working-directory:
+    description: Where the install command runs.
+    default: "."
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      with:
+        repository: ${{ inputs.repository || github.repository }}
+        ref: ${{ inputs.ref }}
+        path: ${{ inputs.path }}
+        fetch-depth: ${{ inputs.fetch-depth }}
+        token: ${{ inputs.token }}
+        persist-credentials: false
+    - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      with:
+        node-version: ${{ inputs.node-version }}
+    # `npm ci` refuses a lockfile the manifest has outgrown, which is exactly the state a major
+    # dependency bump arrives in — the job that exists to repair it must still be able to install.
+    - if: inputs.install != ''
+      shell: bash
+      working-directory: ${{ inputs.path && format('{0}/{1}', inputs.path, inputs.working-directory) || inputs.working-directory }}
+      run: ${{ inputs.install }} || npm install
