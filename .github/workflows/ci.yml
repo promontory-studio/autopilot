@@ -13,8 +13,17 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # The composite actions are for callers, who get them fetched by reference. A local `./`
+    # action needs the repository checked out before it can be resolved, so using one here would
+    # mean checking out twice; the steps it wraps are spelled out instead.
     steps:
-      - uses: ./.github/actions/setup-node-ci
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+      - run: npm ci
       - run: npm run typecheck
       - run: npm test
       # The boundary is the product here, so it is a check and not a review note.
@@ -38,4 +47,13 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: ./.github/actions/codeql-scan
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: github/codeql-action/init@d8073367669608af8fbcc5f63dd0a0d52bb90cff # v4
+        with:
+          languages: javascript-typescript
+          build-mode: none
+      - uses: github/codeql-action/analyze@d8073367669608af8fbcc5f63dd0a0d52bb90cff # v4
+        with:
+          category: /language:javascript-typescript
