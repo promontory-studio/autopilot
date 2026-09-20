@@ -1,5 +1,6 @@
 name: codeql-scan
-description: Run CodeQL against one language and upload the result.
+description: Run CodeQL against one language and upload the result. The calling job needs
+  `security-events: write` and `actions: read`.
 
 inputs:
   language:
