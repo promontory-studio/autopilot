@@ -20,10 +20,11 @@ files() {
   git ls-files -z 2>/dev/null | tr '\0' '\n' | grep -vE '^scripts/no-entity-leak' || true
 }
 
-# Planning shorthand: week and sub-phase codes, and pointers to documents only the private tree has.
+# Planning shorthand: week and sub-phase codes, pointers to documents only the private tree has, and
+# the names of the private repositories themselves -- which is how `plover-context` reached .gitignore.
 while IFS= read -r f; do
   [ -f "$f" ] || continue
-  hits=$(grep -nEI '\b(W[0-9]{2,3}|P[0-9][a-z]?)\b|monorepo|docs/cross-app|extraction plan|\bper doc [0-9]' "$f" || true)
+  hits=$(grep -nEI '\b(W[0-9]{2,3}|P[0-9][a-z]?)\b|monorepo|docs/cross-app|extraction plan|\bper doc [0-9]|\bplover[a-z-]*' "$f" || true)
   [ -z "$hits" ] || report "$f: planning reference$(printf '\n  %s' "$hits")"
 done < <(files)
 

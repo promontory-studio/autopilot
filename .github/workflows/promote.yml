@@ -109,7 +109,7 @@ jobs:
         with:
           repository: ${{ job.workflow_repository }}
           ref: ${{ job.workflow_sha }}
-          path: .autopilot-host
+          path: .pedalion-host
           persist-credentials: false
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -138,13 +138,13 @@ jobs:
           node-version: ${{ inputs.node-version }}
 
       - if: steps.open.outputs.open == '0'
-        working-directory: .autopilot-host
+        working-directory: .pedalion-host
         run: npm ci
 
       - name: Soak gate
         id: gate
         if: steps.open.outputs.open == '0'
-        working-directory: .autopilot-host
+        working-directory: .pedalion-host
         env:
           # One token reads both repositories. `report-token` outranks the App token deliberately:
           # a caller supplies it because the App cannot reach the report repository, and the App

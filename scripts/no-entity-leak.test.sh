@@ -32,6 +32,8 @@ check "literal repository fails" 1 "$(plant literal "$pinned
           repository: someone/thing")"
 check "week code fails" 1 "$(plant week "$pinned
 # W44 said to do it this way")"
+check "private repo name fails" 1 "$(plant estate "$pinned
+# see the plover-context checkout for why")"
 check "this repository passes" 0 "$here/.."
 
 echo "$pass passed, $fail failed"

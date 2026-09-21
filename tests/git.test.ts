@@ -31,7 +31,7 @@ function commit(author: string, message: string) {
 }
 
 function newRepo() {
-  repo = mkdtempSync(join(tmpdir(), "autopilot-"));
+  repo = mkdtempSync(join(tmpdir(), "pedalion-ci-"));
   git("init", "-q", "-b", "main");
   write("apps/one/src/a.ts", "export const a = 1;\n");
   commit("a person", "base");
