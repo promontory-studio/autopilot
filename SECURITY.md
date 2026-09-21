@@ -33,5 +33,7 @@ wrong; the shell re-check is what must not be.
 
 ## Supported versions
 
-There are no releases. Callers pin a full commit SHA, so a fix reaches you when you move the pin —
-which arrives as an ordinary dependency-bot pull request. Only `main` receives fixes.
+Only `main` receives fixes. Callers pin a full commit SHA, so a fix reaches you when you move the
+pin — which arrives as an ordinary dependency-bot pull request. Nothing here is published to a
+registry: a tag is a human-readable name for one commit, not a supported branch, and an older tag
+gets no backport. [CHANGELOG.md](CHANGELOG.md) is what moving a pin gets you.
