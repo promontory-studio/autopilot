@@ -26,9 +26,11 @@ export function parseConfig(text: string): Config {
   if (typeof raw.agentAuthor !== "string" || !raw.agentAuthor)
     throw new Error("autopilot config: `agentAuthor` is required (the commit author name the agent pushes as)");
   const apps = (raw.apps ?? DEFAULTS.apps).map((a, i) => {
-    if (!a.path) throw new Error(`autopilot config: apps[${i}].path is required`);
+    if (typeof a.path !== "string") throw new Error(`autopilot config: apps[${i}].path is required`);
     if (!a.run?.length) throw new Error(`autopilot config: apps[${i}].run is required (argv to run this app's tests)`);
-    return { path: a.path.replace(/\/$/, ""), tests: a.tests ?? [], unitTests: a.unitTests ?? [], run: a.run };
+    // "" and "." both mean the repository root — a single-package repository is an app whose path
+    // is nothing, and every path below is then already app-relative.
+    return { path: a.path.replace(/^\.$/, "").replace(/\/$/, ""), tests: a.tests ?? [], unitTests: a.unitTests ?? [], run: a.run };
   });
   return { ...DEFAULTS, ...raw, agentAuthor: raw.agentAuthor, apps };
 }
@@ -37,4 +39,8 @@ export const loadConfig = (path: string): Config => parseConfig(readFileSync(pat
 
 // Test globs are written relative to the app, because that is how a reader thinks about them,
 // and matched against repo-relative git paths.
-export const within = (app: App, globs: string[]): string[] => globs.map((g) => `${app.path}/${g}`);
+export const within = (app: App, globs: string[]): string[] => (app.path ? globs.map((g) => `${app.path}/${g}`) : globs);
+
+export const dirOf = (repo: string, app: App): string => (app.path ? `${repo}/${app.path}` : repo);
+
+export const relativeTo = (app: App, path: string): string => (app.path ? path.slice(app.path.length + 1) : path);

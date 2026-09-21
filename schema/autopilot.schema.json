@@ -37,7 +37,7 @@
         "required": ["path", "run"],
         "additionalProperties": false,
         "properties": {
-          "path": { "type": "string", "description": "Directory, relative to the repository root." },
+          "path": { "type": "string", "description": "Directory, relative to the repository root. Empty or \".\" is the root itself, for a single-package repository." },
           "run": {
             "type": "array",
             "items": { "type": "string" },
