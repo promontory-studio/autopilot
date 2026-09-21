@@ -132,11 +132,20 @@ it belongs to is waiting on itself, and the pull request never merges.
 enables auto-merge. The merge is decided by the shell, not the model — it re-reads the pull
 request and requires an approval that still sits at the head CI tested, with no vetoing label.
 
-**`retarget-base` moves an automated pull request off the default branch.** Security updates are
-always raised against the default branch, whatever `dependabot.yml` targets — and a repository that
-promotes its integration branch whole cannot take a merge there without diverging the branch that
-is supposed to receive it. Set it to the integration branch and a pull request from an author in
-`allowed-bots` is moved, with a comment saying why. Empty (the default) leaves every base alone.
+**`retarget-base` moves a dependency bot's pull request off the default branch.** Security updates
+are always raised against the default branch, whatever `dependabot.yml` targets — and a repository
+that promotes its integration branch whole cannot take a merge there without diverging the branch
+that is supposed to receive it. Set it to the integration branch; empty (the default) leaves every
+base alone.
+
+Two things make it safe, and both are load-bearing:
+
+- It is keyed on `bot-branch-prefix`, not on the author, because the App opens the daily promotion
+  pull request too — from the default branch, into the default branch. Moving that one would stop
+  promotion arriving, with nothing to see.
+- It asks for a rebase as well as changing the base. The branch was cut from the default branch, so
+  a base change alone leaves the pull request reading as *everything the default branch has that the
+  target does not*, including whatever `keep-paths` deliberately holds back on it.
 
 **A merge needs a GitHub App.** Without `app-id` and `app-key` the merge step is skipped, because
 a merge pushed with `GITHUB_TOKEN` starts no downstream workflow — your release job would never

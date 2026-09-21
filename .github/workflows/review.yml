@@ -73,7 +73,11 @@ on:
       repair-event:
         type: string
         default: autopilot-repair
-      repair-branch-prefix:
+      bot-branch-prefix:
+        description: >
+          Prefix of the branches the dependency bot opens. Both the retarget and the repair below
+          are keyed on it rather than on the author, so a branch that keeps failing is handled
+          again on its next run.
         type: string
         default: dependabot/
     secrets:
@@ -106,12 +110,16 @@ jobs:
           app-id: ${{ inputs.app-id }}
           private-key: ${{ secrets.app-key }}
 
-      - name: Move an automated pull request off the default branch
-        if: inputs.retarget-base != ''
+      # Keyed on the BRANCH PREFIX, not on the author. The App opens the daily promotion pull
+      # request too — from the default branch's own history, into the default branch — and moving
+      # that one onto the integration branch would stop promotion arriving, silently.
+      - name: Move a dependency bot's pull request off the default branch
+        if: >
+          inputs.retarget-base != '' &&
+          startsWith(inputs.head-branch, inputs.bot-branch-prefix)
         env:
           GH_TOKEN: ${{ steps.app.outputs.token || github.token }}
           PR: ${{ inputs.pr-number }}
-          BOTS: ${{ inputs.allowed-bots }}
           TARGET: ${{ inputs.retarget-base }}
         run: |
           set -euo pipefail
@@ -119,20 +127,19 @@ jobs:
           # the caller's trigger — a property that is absent interpolates to the empty string, and
           # every base would then look like the default branch.
           DEFAULT=$(gh repo view "$GITHUB_REPOSITORY" --json defaultBranchRef -q .defaultBranchRef.name)
-          pr=$(gh pr view "$PR" -R "$GITHUB_REPOSITORY" --json baseRefName,author)
-          base=$(jq -r .baseRefName <<<"$pr")
-          author=$(jq -r .author.login <<<"$pr")
+          base=$(gh pr view "$PR" -R "$GITHUB_REPOSITORY" --json baseRefName -q .baseRefName)
           if [ "$base" != "$DEFAULT" ] || [ "$base" = "$TARGET" ]; then
             echo "base is $base; nothing to move"
             exit 0
           fi
-          if ! printf '%s' "$BOTS" | tr ',' '\n' | grep -qxF "$author"; then
-            echo "$author is not an automated author; leaving the base alone"
-            exit 0
-          fi
           gh pr edit "$PR" -R "$GITHUB_REPOSITORY" --base "$TARGET"
-          gh pr comment "$PR" -R "$GITHUB_REPOSITORY" \
-            -b "Moved onto \`$TARGET\`: \`$DEFAULT\` receives \`$TARGET\` whole, so a merge here would diverge it."
+          # The base alone is not enough. The branch was cut from the default branch, so the pull
+          # request would now read as "everything the default branch has that the target does not,
+          # plus the bump" — including any path the promotion deliberately keeps back. `rebase`
+          # recreates the branch from its new base, leaving only the bump.
+          gh pr comment "$PR" -R "$GITHUB_REPOSITORY" -b "$(printf '%s\n\n%s' \
+            "Moved onto \`$TARGET\`, because \`$DEFAULT\` receives \`$TARGET\` whole and a merge here would diverge it." \
+            "@dependabot rebase")"
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -196,7 +203,7 @@ jobs:
     if: >
       inputs.mode != 'off' && inputs.repair-repo != '' &&
       inputs.ci-conclusion == 'failure' &&
-      startsWith(inputs.head-branch, inputs.repair-branch-prefix)
+      startsWith(inputs.head-branch, inputs.bot-branch-prefix)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
