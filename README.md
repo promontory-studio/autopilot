@@ -1,10 +1,10 @@
-# pedalion
+# pedalion-ci
 
 πηδάλιον — the steering-oar of an ancient ship. It names the part, not the pilot: your
 repository holds the helm and steers through this one.
 
-[![CI](https://github.com/promontory-studio/pedalion/actions/workflows/ci.yml/badge.svg)](https://github.com/promontory-studio/pedalion/actions/workflows/ci.yml)
-[![Community Health](https://img.shields.io/badge/dynamic/json?url=https://api.github.com/repos/promontory-studio/pedalion/community/profile&query=$.health_percentage&suffix=%25&label=community%20health)](https://github.com/promontory-studio/pedalion/community)
+[![CI](https://github.com/promontory-studio/pedalion-ci/actions/workflows/ci.yml/badge.svg)](https://github.com/promontory-studio/pedalion-ci/actions/workflows/ci.yml)
+[![Community Health](https://img.shields.io/badge/dynamic/json?url=https://api.github.com/repos/promontory-studio/pedalion-ci/community/profile&query=$.health_percentage&suffix=%25&label=community%20health)](https://github.com/promontory-studio/pedalion-ci/community)
 
 Reusable GitHub Actions workflows for letting an agent and a dependency bot open pull requests
 against your repository without letting them quietly widen what they are allowed to change.
@@ -39,7 +39,7 @@ Two constraints shape the design, and both bite silently if ignored:
 ## Pin by SHA
 
 ```yaml
-uses: OWNER/pedalion/.github/workflows/review.yml@<full-40-char-sha>
+uses: OWNER/pedalion-ci/.github/workflows/review.yml@<full-40-char-sha>
 ```
 
 A change here reaches nobody until a pin moves, and the pin bump arrives as an ordinary Dependabot
@@ -89,7 +89,7 @@ The JSON Schema is in [`schema/autopilot.schema.json`](schema/autopilot.schema.j
 # .github/workflows/ci.yml
   guard:
     if: github.event_name == 'pull_request'
-    uses: OWNER/pedalion/.github/workflows/guard.yml@<sha>
+    uses: OWNER/pedalion-ci/.github/workflows/guard.yml@<sha>
     with:
       base-ref: ${{ github.base_ref }}
       head-sha: ${{ github.event.pull_request.head.sha }}
@@ -120,7 +120,7 @@ jobs:
       vars.AUTOPILOT != 'off' &&
       github.event.workflow_run.event == 'pull_request' &&
       github.event.workflow_run.pull_requests[0] != null
-    uses: OWNER/pedalion/.github/workflows/review.yml@<sha>
+    uses: OWNER/pedalion-ci/.github/workflows/review.yml@<sha>
     with:
       mode: ${{ vars.AUTOPILOT }}
       pr-number: ${{ github.event.workflow_run.pull_requests[0].number }}
@@ -163,7 +163,7 @@ fire. Everything else works with `GITHUB_TOKEN` alone.
 
 ```yaml
   promote:
-    uses: OWNER/pedalion/.github/workflows/promote.yml@<sha>
+    uses: OWNER/pedalion-ci/.github/workflows/promote.yml@<sha>
     with:
       mode: ${{ vars.AUTOPILOT_PROMOTE }}
       base-branch: main
@@ -191,7 +191,7 @@ there. A promotion opens a pull request; it never pushes to the base branch.
   notify-failure:
     needs: [build, deploy]
     if: always() && contains(needs.*.result, 'failure')
-    uses: OWNER/pedalion/.github/workflows/notify-failure.yml@<sha>
+    uses: OWNER/pedalion-ci/.github/workflows/notify-failure.yml@<sha>
     with:
       title: Nightly backup failed
       context: There is no verified recent snapshot until this passes.

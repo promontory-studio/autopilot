@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-Please use GitHub's [private vulnerability reporting](https://github.com/promontory-studio/pedalion/security/advisories/new)
+Please use GitHub's [private vulnerability reporting](https://github.com/promontory-studio/pedalion-ci/security/advisories/new)
 rather than opening a public issue. Include a description of the issue and, if you have one, a
 caller workflow that demonstrates it.
 
