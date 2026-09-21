@@ -229,7 +229,8 @@ added" and "the bug could have been caught".
 
 ## Contributing
 
-`npm ci`, then `npm test` and `npm run typecheck`. `./scripts/no-entity-leak.sh` must stay green —
-if you need to name a repository, it belongs in an input, not in a file here.
+See [CONTRIBUTING.md](CONTRIBUTING.md) — how to run the suite, which designs here look like bugs
+and are deliberate, and why a workflow input is a public API. Vulnerabilities go through
+[SECURITY.md](SECURITY.md), not a public issue.
 
 MIT licensed.
