@@ -1,0 +1,6 @@
+name: zz-probe-caller
+on:
+  workflow_dispatch:
+jobs:
+  call:
+    uses: promontory-studio/autopilot/.github/workflows/zz-probe-called.yml@zz-selfloc
