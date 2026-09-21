@@ -71,19 +71,15 @@ jobs:
           BRANCH: ${{ inputs.head-branch }}
           SKIP: ${{ inputs.skip-branch-prefixes }}
 
-      # Self-locating: `job_workflow_ref` is owner/repo/.github/workflows/<file>@<ref> for the
-      # workflow being called, so the host never has to be told its own name.
-      - id: host
-        if: steps.applies.outputs.yes == 'true'
-        run: |
-          ref='${{ github.job_workflow_ref }}'
-          echo "repo=${ref%%/.github/*}" >> "$GITHUB_OUTPUT"
-
+      # Self-locating, so the host never has to be told its own name or be pinned twice. The `job`
+      # context — not `github` — is the one that describes the workflow this job came from; the
+      # `github` context describes the caller's. `github.job_workflow_ref` does not exist and
+      # silently interpolates to the empty string, which checks the CALLER out as the host.
       - if: steps.applies.outputs.yes == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          repository: ${{ steps.host.outputs.repo }}
-          ref: ${{ github.job_workflow_sha }}
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
           path: .autopilot-host
           persist-credentials: false
 
