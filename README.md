@@ -74,6 +74,8 @@ Only the guard reads it, and it is read from your repository at run time.
   to prove its tests: it is reconciling a bump, not writing a feature.
 - `forbidden` — extra globs on top of the ones that are always forbidden to the agent:
   `.github/**`, `**/package.json`, `**/package-lock.json`.
+- `apps[].path` — the app's directory. Empty (or `"."`) is the repository root, which is what a
+  single-package repository wants.
 - `apps[].run` — argv that runs the named test files. The guard appends paths relative to `path`
   and runs it there.
 - `apps[].unitTests` — the subset cheap enough to re-run at the base commit. That run is how a new

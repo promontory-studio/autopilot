@@ -86,6 +86,22 @@ describe("redOnBase", () => {
     expect(withRunner(0)).toBe(false);
   });
 
+  it("runs a root app's suite from the repository root, with app-relative test paths", () => {
+    newRepo();
+    write("tests/unit/a.test.ts", "// proves the fix\n");
+    commit("agent[bot]", "fix + test");
+    const root = parseConfig(
+      JSON.stringify({ agentAuthor: "agent[bot]", apps: [{ path: "", unitTests: ["tests/unit/**/*.test.ts"], run: ["true"] }] }),
+    );
+    let seen: { args: string[]; cwd: string } | undefined;
+    const spy = (_cmd: string, args: string[], opts: { cwd: string }) => {
+      seen = { args, cwd: opts.cwd };
+      return { status: 1 };
+    };
+    redOnBase(repo, git("rev-parse", "HEAD~1").trim(), ["tests/unit/a.test.ts"], root, spy as never);
+    expect(seen).toEqual({ args: ["tests/unit/a.test.ts"], cwd: repo });
+  });
+
   it("restores the working tree afterwards, including files the base does not have", () => {
     repoWithNewTest();
     withRunner(1);

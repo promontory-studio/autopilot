@@ -24,6 +24,12 @@ describe("parseConfig", () => {
     expect(within(app!, ["tests/**"])).toEqual(["apps/x/tests/**"]);
   });
 
+  it("reads an empty or dotted path as the repository root, so a single-package repo is one app", () => {
+    const apps = parseConfig(JSON.stringify({ agentAuthor: "a", apps: [{ path: "", run: ["t"] }, { path: ".", run: ["t"] }] })).apps;
+    expect(apps.map((a) => a.path)).toEqual(["", ""]);
+    expect(within(apps[0]!, ["tests/**"])).toEqual(["tests/**"]);
+  });
+
   it("refuses a config that is not JSON rather than falling back to permissive defaults", () => {
     expect(() => parseConfig("not json")).toThrow();
   });

@@ -1,7 +1,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { rmSync } from "node:fs";
 import type { App, Config } from "./config";
-import { within } from "./config";
+import { dirOf, relativeTo, within } from "./config";
 import { matchesAny } from "./glob";
 
 // Enforced in CI rather than in the agent's prompt: a prompt can be talked out of a rule, a check cannot.
@@ -67,7 +67,7 @@ export function redOnBase(repo: string, base: string, tests: string[], config: C
       const mine = tests.filter((t) => matchesAny(t, within(app, app.unitTests)));
       if (!mine.length) return false;
       const [cmd, ...args] = app.run;
-      return spawn(cmd!, [...args, ...mine.map((t) => t.slice(app.path.length + 1))], { cwd: `${repo}/${app.path}`, stdio: "inherit" }).status !== 0;
+      return spawn(cmd!, [...args, ...mine.map((t) => relativeTo(app, t))], { cwd: dirOf(repo, app), stdio: "inherit" }).status !== 0;
     });
   } finally {
     git("restore", "--source=HEAD", "--worktree", "--", ".");
