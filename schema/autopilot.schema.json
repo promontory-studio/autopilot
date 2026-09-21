@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/OWNER/REPO/main/schema/autopilot.schema.json",
+  "$id": "https://raw.githubusercontent.com/promontory-studio/pedalion-ci/main/schema/autopilot.schema.json",
   "title": "autopilot.json",
   "description": "What the guard is allowed to let an automated author change in this repository.",
   "type": "object",
@@ -14,7 +14,7 @@
     "botAuthor": {
       "type": "string",
       "default": "dependabot[bot]",
-      "description": "Login of the dependency bot. Its commits may touch manifests, and it is not asked to prove its tests."
+      "description": "Login of the dependency bot. Its commits may touch **only** manifests and workflow files -- anything else is a violation -- and it is not asked to prove its tests."
     },
     "maxLines": {
       "type": "integer",

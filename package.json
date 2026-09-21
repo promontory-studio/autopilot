@@ -1,5 +1,12 @@
 {
-  "name": "autopilot",
+  "name": "pedalion-ci",
+  "version": "1.0.0",
+  "description": "Reusable GitHub Actions workflows for guarding, reviewing and promoting automated pull requests.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/promontory-studio/pedalion-ci.git"
+  },
   "private": true,
   "type": "module",
   "engines": {
