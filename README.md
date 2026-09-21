@@ -177,6 +177,21 @@ there. A promotion opens a pull request; it never pushes to the base branch.
 It files on the calling repository by default. Point `issue-repo` (plus `app-id`) somewhere else if
 your failures belong in a different tracker.
 
+## Permissions
+
+A called job that asks for a permission the caller did not grant fails the **whole caller
+workflow** before any job starts, so what each one needs is part of its contract:
+
+| Workflow | What the calling job must grant |
+|---|---|
+| `guard.yml` | nothing |
+| `notify-failure.yml` | nothing, unless it files on the calling repository — then `issues: write` |
+| `review.yml` | `contents: write`, `pull-requests: write`, `issues: write`, `id-token: write` |
+| `promote.yml` | `contents: write`, `pull-requests: write` |
+
+Grant them on the calling job rather than the whole workflow, so a sibling job does not inherit a
+token it has no use for.
+
 ## What the guard actually checks
 
 Against the base branch, for commits authored by `agentAuthor`:

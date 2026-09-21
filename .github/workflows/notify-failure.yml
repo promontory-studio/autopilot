@@ -3,6 +3,11 @@ name: notify-failure
 # One implementation of "an unattended workflow failed, tell someone". A recurrence comments on
 # the open issue carrying the same title rather than filing a second one, so a workflow that is
 # red every night produces one thread instead of thirty.
+#
+# Filing into the calling repository needs `issues: write` on the calling job. It is not requested
+# here: a called job that asks for a permission the caller did not grant fails the whole caller
+# workflow before any job starts, and the common case — filing into another repository with an App
+# token — does not need it at all.
 
 on:
   workflow_call:
@@ -39,8 +44,6 @@ jobs:
   file:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    permissions:
-      issues: write
     steps:
       - id: target
         env:
