@@ -55,6 +55,9 @@ jobs:
           echo "name=${repo##*/}" >> "$GITHUB_OUTPUT"
       - id: app
         if: inputs.issue-repo != '' && inputs.app-id != ''
+        # An App that is not installed on the target repository's owner 404s here. That is a
+        # reason to fall through to `issue-token` below, not to lose the alarm entirely.
+        continue-on-error: true
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
           app-id: ${{ inputs.app-id }}

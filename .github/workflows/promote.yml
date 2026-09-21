@@ -92,6 +92,10 @@ jobs:
 
       - id: report-app
         if: inputs.app-id != '' && inputs.report-repo != ''
+        # An App that is not installed on the report repository's owner 404s here. That is a
+        # reason to fall through to `report-token` below; without one the gate reads nothing
+        # and refuses to promote, which is the safe direction.
+        continue-on-error: true
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
           app-id: ${{ inputs.app-id }}
@@ -142,7 +146,10 @@ jobs:
         if: steps.open.outputs.open == '0'
         working-directory: .autopilot-host
         env:
-          GH_TOKEN: ${{ steps.report-app.outputs.token || steps.app.outputs.token || secrets.report-token || github.token }}
+          # One token reads both repositories. `report-token` outranks the App token deliberately:
+          # a caller supplies it because the App cannot reach the report repository, and the App
+          # token — scoped to the caller — cannot reach it either.
+          GH_TOKEN: ${{ steps.report-app.outputs.token || secrets.report-token || steps.app.outputs.token || github.token }}
         run: |
           set -euo pipefail
           git -C "$GITHUB_WORKSPACE/caller" fetch --quiet origin \
