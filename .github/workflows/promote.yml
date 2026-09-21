@@ -99,15 +99,12 @@ jobs:
           owner: ${{ steps.report.outputs.owner }}
           repositories: ${{ steps.report.outputs.name }}
 
-      - id: host
-        run: |
-          ref='${{ github.job_workflow_ref }}'
-          echo "repo=${ref%%/.github/*}" >> "$GITHUB_OUTPUT"
-
+      # Self-locating: the `job` context describes the workflow this job came from, the `github`
+      # context the caller's. See guard.yml for why `github.job_workflow_ref` is not it.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          repository: ${{ steps.host.outputs.repo }}
-          ref: ${{ github.job_workflow_sha }}
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
           path: .autopilot-host
           persist-credentials: false
 
