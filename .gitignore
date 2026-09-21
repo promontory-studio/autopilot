@@ -1,1 +1,6 @@
 node_modules/
+
+# `**/` matters: an agent's working directory can be at any depth. Agent memory lives only in
+# plover-context, and an ephemeral worktree is a nested repository rather than content.
+**/.claude/agent-memory/
+**/.claude/worktrees/
