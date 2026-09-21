@@ -1,5 +1,8 @@
 # autopilot
 
+[![CI](https://github.com/promontory-studio/autopilot/actions/workflows/ci.yml/badge.svg)](https://github.com/promontory-studio/autopilot/actions/workflows/ci.yml)
+[![Community Health](https://img.shields.io/badge/dynamic/json?url=https://api.github.com/repos/promontory-studio/autopilot/community/profile&query=$.health_percentage&suffix=%25&label=community%20health)](https://github.com/promontory-studio/autopilot/community)
+
 Reusable GitHub Actions workflows for letting an agent and a dependency bot open pull requests
 against your repository without letting them quietly widen what they are allowed to change.
 
