@@ -1,5 +1,5 @@
 {
-  "agentAuthor": "autopilot[bot]",
+  "agentAuthor": "pedalion-ci[bot]",
   "botAuthor": "dependabot[bot]",
   "maxLines": 400,
   "forbidden": ["schema/**"],
