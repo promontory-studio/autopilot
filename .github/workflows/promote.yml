@@ -34,7 +34,8 @@ on:
         type: string
         default: ""
       report-repo:
-        description: Where runtime error reports are filed. Empty skips that half of the gate.
+        description: "`owner/name` of where runtime error reports are filed. Empty skips that half
+          of the gate."
         type: string
         default: ""
       report-label:
@@ -74,6 +75,14 @@ jobs:
       contents: write
       pull-requests: write
     steps:
+      - id: report
+        if: inputs.report-repo != ''
+        env:
+          REPO: ${{ inputs.report-repo }}
+        run: |
+          echo "owner=${REPO%%/*}" >> "$GITHUB_OUTPUT"
+          echo "name=${REPO##*/}" >> "$GITHUB_OUTPUT"
+
       - id: app
         if: inputs.app-id != ''
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
@@ -87,8 +96,8 @@ jobs:
         with:
           app-id: ${{ inputs.app-id }}
           private-key: ${{ secrets.app-key }}
-          owner: ${{ github.repository_owner }}
-          repositories: ${{ inputs.report-repo }}
+          owner: ${{ steps.report.outputs.owner }}
+          repositories: ${{ steps.report.outputs.name }}
 
       - id: host
         run: |
