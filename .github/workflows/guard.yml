@@ -26,6 +26,16 @@ on:
         description: Login that opened the pull request.
         type: string
         default: ""
+      head-branch:
+        description: Branch the pull request comes from. Only needed with skip-branch-prefixes.
+        type: string
+        default: ""
+      skip-branch-prefixes:
+        description: >
+          Comma-separated head-branch prefixes the guard does not apply to, for automated pull
+          requests that are not an agent's work — a whole-branch promotion, say.
+        type: string
+        default: ""
       config-path:
         type: string
         default: .github/autopilot.json
@@ -44,6 +54,12 @@ jobs:
     steps:
       - id: applies
         run: |
+          for prefix in $(printf '%s' "$SKIP" | tr ',' ' '); do
+            case "$BRANCH" in "$prefix"*)
+              echo "The guard does not apply to $prefix branches. Nothing to check."
+              exit 0
+            esac
+          done
           if [ -z "$AUTHORS" ] || printf '%s' "$AUTHORS" | tr ',' '\n' | grep -qxF "$AUTHOR"; then
             echo "yes=true" >> "$GITHUB_OUTPUT"
           else
@@ -52,6 +68,8 @@ jobs:
         env:
           AUTHORS: ${{ inputs.authors }}
           AUTHOR: ${{ inputs.pr-author }}
+          BRANCH: ${{ inputs.head-branch }}
+          SKIP: ${{ inputs.skip-branch-prefixes }}
 
       # Self-locating: `job_workflow_ref` is owner/repo/.github/workflows/<file>@<ref> for the
       # workflow being called, so the host never has to be told its own name.

@@ -87,11 +87,15 @@ The JSON Schema is in [`schema/autopilot.schema.json`](schema/autopilot.schema.j
       head-sha: ${{ github.event.pull_request.head.sha }}
       authors: dependabot[bot],my-agent[bot]
       pr-author: ${{ github.event.pull_request.user.login }}
+      head-branch: ${{ github.head_ref }}
+      skip-branch-prefixes: promote/
 ```
 
 **Filter by author with the `authors` input, never with a job-level `if:`.** A job skipped by a
 job-level `if:` reports SKIPPED, and a *required* check that reports SKIPPED blocks the merge
-forever. `authors` keeps the job running and lets it pass.
+forever. `authors` keeps the job running and lets it pass. `skip-branch-prefixes` is the same
+escape for a branch: an automated pull request that is not an agent's work, such as a whole-branch
+promotion, is exempted by head-branch prefix rather than by skipping the job.
 
 ### 3. Review and merge
 
