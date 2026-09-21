@@ -1,6 +1,21 @@
 # Contributing
 
-`npm ci`, then `npm test` and `npm run typecheck`. Both run in CI on every pull request.
+Node 22 or newer (`engines.node` in `package.json`). `npm ci`, then the four things the `check`
+job runs on every pull request:
+
+```bash
+npm run typecheck
+npm test
+./scripts/no-entity-leak.sh
+./scripts/no-entity-leak.test.sh
+```
+
+CI also runs the guard against this repository's own pull request, and CodeQL. Neither has anything
+to run by hand.
+
+[ARCHITECTURE.md](ARCHITECTURE.md) is the contract behind the workflows: read it before changing
+one. [CHANGELOG.md](CHANGELOG.md) gets an entry under `[Unreleased]` for anything a caller would
+notice.
 
 ## A workflow input is a public API
 
@@ -12,17 +27,26 @@ set it.
 
 ## `./scripts/no-entity-leak.sh` must stay green
 
-It is a required check, and it fails the build on anything that ties this repository to one
-particular estate: a literal `repository:`, `owner:` or `repositories:` value under `.github/`, a
-`uses:` from an owner outside `actions`, `github` and `anthropics`, a `uses:` not pinned to a full
-40-character SHA, or planning shorthand carried in from a private tree.
+It runs as a step inside the required `check` job, and it fails the build on anything that ties
+this repository to one particular estate: a literal `repository:`, `owner:` or `repositories:`
+value under `.github/`, a `uses:` from an owner outside `actions`, `github` and `anthropics`, a
+`uses:` not pinned to a full 40-character SHA, or planning shorthand and private repository names
+carried in from a private tree.
+
+`./scripts/no-entity-leak.test.sh` plants one of each violation to prove the check can fail, and
+asserts this repository passes. Change the script and run both, or CI reddens on something the
+pull request template never asked you to check.
 
 A reusable workflow that knows who calls it is not reusable. If you need to name a repository, it
 belongs in an input.
 
 ## Things that look like bugs and are deliberate
 
-A pull request that "fixes" one of these needs to argue with the reason, not just the code.
+A pull request that "fixes" one of these needs to argue with the reason, not just the code. The
+implementation-side ones — the `npm ci` fallback, `redOnBase` rewinding the tree, the inverse bot
+allow-list, and an agent fix with no test failing outright — are in
+[ARCHITECTURE.md](ARCHITECTURE.md#5-four-things-that-look-like-bugs), along with the job-id rule
+(§2) and the self-locating checkout (§3). The caller-facing ones:
 
 - **Applicability is an input, never a job-level `if:`.** A job skipped by a job-level `if:`
   reports SKIPPED, and a *required* check that reports SKIPPED blocks the merge forever. That is
