@@ -49,6 +49,14 @@ on:
         description: Bot logins whose pull requests the review action is allowed to act on.
         type: string
         default: dependabot[bot]
+      retarget-base:
+        description: >
+          Branch to move an automated pull request onto when it was raised against the default
+          branch. Empty leaves every base alone. A repository that promotes its integration branch
+          whole wants `dev` here: security updates are always raised against the default branch,
+          and merging one there diverges it from the branch it is supposed to receive whole.
+        type: string
+        default: ""
       model:
         type: string
         default: ""
@@ -88,6 +96,44 @@ jobs:
       issues: write
       id-token: write
     steps:
+      # Hoisted above the review because the retarget below needs it: a base change pushed with
+      # GITHUB_TOKEN starts no workflow, so the pull request would keep checks measured against the
+      # base it no longer has. An App's does.
+      - id: app
+        if: inputs.app-id != ''
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ inputs.app-id }}
+          private-key: ${{ secrets.app-key }}
+
+      - name: Move an automated pull request off the default branch
+        if: inputs.retarget-base != ''
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token || github.token }}
+          PR: ${{ inputs.pr-number }}
+          BOTS: ${{ inputs.allowed-bots }}
+          TARGET: ${{ inputs.retarget-base }}
+        run: |
+          set -euo pipefail
+          # Asked of the API rather than read off `github.event.repository`, whose shape depends on
+          # the caller's trigger — a property that is absent interpolates to the empty string, and
+          # every base would then look like the default branch.
+          DEFAULT=$(gh repo view "$GITHUB_REPOSITORY" --json defaultBranchRef -q .defaultBranchRef.name)
+          pr=$(gh pr view "$PR" -R "$GITHUB_REPOSITORY" --json baseRefName,author)
+          base=$(jq -r .baseRefName <<<"$pr")
+          author=$(jq -r .author.login <<<"$pr")
+          if [ "$base" != "$DEFAULT" ] || [ "$base" = "$TARGET" ]; then
+            echo "base is $base; nothing to move"
+            exit 0
+          fi
+          if ! printf '%s' "$BOTS" | tr ',' '\n' | grep -qxF "$author"; then
+            echo "$author is not an automated author; leaving the base alone"
+            exit 0
+          fi
+          gh pr edit "$PR" -R "$GITHUB_REPOSITORY" --base "$TARGET"
+          gh pr comment "$PR" -R "$GITHUB_REPOSITORY" \
+            -b "Moved onto \`$TARGET\`: \`$DEFAULT\` receives \`$TARGET\` whole, so a merge here would diverge it."
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ inputs.head-sha }}
@@ -121,15 +167,8 @@ jobs:
                 `gh pr edit ${{ inputs.pr-number }} --add-label ${{ inputs.needs-human-label }}`,
                 and do not approve or merge.
 
-      - id: app
-        if: inputs.mode == 'on' && inputs.app-id != ''
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
-        with:
-          app-id: ${{ inputs.app-id }}
-          private-key: ${{ secrets.app-key }}
-
       - name: Merge if approved at this head
-        if: steps.app.outputs.token != ''
+        if: inputs.mode == 'on' && steps.app.outputs.token != ''
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           PR: ${{ inputs.pr-number }}

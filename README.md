@@ -132,6 +132,12 @@ it belongs to is waiting on itself, and the pull request never merges.
 enables auto-merge. The merge is decided by the shell, not the model — it re-reads the pull
 request and requires an approval that still sits at the head CI tested, with no vetoing label.
 
+**`retarget-base` moves an automated pull request off the default branch.** Security updates are
+always raised against the default branch, whatever `dependabot.yml` targets — and a repository that
+promotes its integration branch whole cannot take a merge there without diverging the branch that
+is supposed to receive it. Set it to the integration branch and a pull request from an author in
+`allowed-bots` is moved, with a comment saying why. Empty (the default) leaves every base alone.
+
 **A merge needs a GitHub App.** Without `app-id` and `app-key` the merge step is skipped, because
 a merge pushed with `GITHUB_TOKEN` starts no downstream workflow — your release job would never
 fire. Everything else works with `GITHUB_TOKEN` alone.
