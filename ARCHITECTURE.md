@@ -4,7 +4,7 @@ One sentence: **the caller owns the policy, this repository owns the enforcement
 allowed to know the other's name.** Everything below follows from that split, including the parts
 that look like indirection and are not.
 
-This is the contract, not a tour — `README.md` is where you learn what to paste into your own
+This is the contract, not a tour — `USAGE.md` is where you learn what to paste into your own
 repository. What follows is what you need in order to change something here safely, or to judge
 whether a change someone else made is safe.
 
@@ -43,7 +43,7 @@ guard` and must require *that*. Neither is more correct. What matters is that th
 ruleset agree — rename the job and the old required check stops reporting, which does not fail the
 merge, it **blocks it forever** on a context that will never arrive.
 
-Two consequences worth knowing before you copy `README.md`'s example verbatim:
+Two consequences worth knowing before you copy `USAGE.md`'s example verbatim:
 
 - Pick the job id first, then write the ruleset to match it.
 - **Do not put a job-level `if:` on the guard.** A required check that reports `SKIPPED` is not

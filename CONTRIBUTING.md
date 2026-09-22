@@ -15,7 +15,9 @@ to run by hand.
 
 [ARCHITECTURE.md](ARCHITECTURE.md) is the contract behind the workflows: read it before changing
 one. [CHANGELOG.md](CHANGELOG.md) gets an entry under `[Unreleased]` for anything a caller would
-notice.
+notice. The three reader-facing docs split by question: [README.md](README.md) is why these checks
+exist, [USAGE.md](USAGE.md) is what a caller pastes, [REFERENCE.md](REFERENCE.md) is every input
+and default — a change to an input touches the last two.
 
 ## A workflow input is a public API
 

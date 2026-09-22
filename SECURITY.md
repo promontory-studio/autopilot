@@ -27,7 +27,7 @@ anything that gets a change past them without a human deciding to let it:
   it did.
 
 Out of scope: a caller that grants a permission it did not have to (see the Permissions table in
-the README — a called job cannot ask for more than the caller gave it), a caller that pins a
+`USAGE.md` — a called job cannot ask for more than the caller gave it), a caller that pins a
 branch instead of a SHA, and the model's *judgement* in `review.yml`. The model is allowed to be
 wrong; the shell re-check is what must not be.
 

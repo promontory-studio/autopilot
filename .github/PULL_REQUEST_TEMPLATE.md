@@ -9,6 +9,6 @@
 - [ ] If this "fixes" one of the deliberate designs in
       [ARCHITECTURE.md](../ARCHITECTURE.md#5-four-things-that-look-like-bugs), argued with the
       reason rather than only changing the code.
-- [ ] A changed input is documented in the README's **Reference: every input**.
+- [ ] A changed input is documented in [REFERENCE.md](../REFERENCE.md).
 - [ ] Anything a caller would notice has an entry under `[Unreleased]` in
       [CHANGELOG.md](../CHANGELOG.md).

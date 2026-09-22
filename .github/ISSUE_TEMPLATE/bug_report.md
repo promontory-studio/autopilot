@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: A workflow here isn't behaving as the README documents
+about: A workflow here isn't behaving as documented
 title: ""
 labels: bug
 ---
