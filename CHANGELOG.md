@@ -14,6 +14,30 @@ version and is announced here first.
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-09-22
+
+Documentation only. **No workflow, action, input, default, secret or behaviour changed** — moving a
+pin to this tag changes nothing about what runs. A minor bump rather than a patch because two new
+files exist that callers may link to.
+
+### Added
+
+- `USAGE.md` — everything a caller pastes: the five getting-started steps, the permissions table
+  and the pin-by-SHA form, moved verbatim out of `README.md`.
+- `REFERENCE.md` — every input, secret and default, moved verbatim out of `README.md`'s
+  **Reference: every input**.
+
+### Changed
+
+- `README.md` is now the argument rather than the manual: why each check exists and why re-running
+  CI does not make it, a section per workflow named for what it refuses, and a
+  **What it has actually caught** section carrying real counts and the negatives with them.
+- `package.json`'s `description` and the repository's GitHub About now say what the workflows
+  check rather than what kind of thing they are, and are once again identical to each other.
+- Inbound references in `ARCHITECTURE.md`, `SECURITY.md`, `CONTRIBUTING.md`, the pull request
+  template and the bug report template now point at whichever of the three documents holds the
+  thing they meant.
+
 ## [1.1.0] — 2026-09-21
 
 ### Added

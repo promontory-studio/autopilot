@@ -1,7 +1,7 @@
 {
   "name": "pedalion-ci",
-  "version": "1.1.0",
-  "description": "Reusable GitHub Actions workflows for guarding, reviewing and promoting automated pull requests.",
+  "version": "1.2.0",
+  "description": "The checks a code reviewer would have made, for pull requests no reviewer is reading: a test must be red without its fix, an agent may not edit the rules it is judged by, and the merge is decided by the shell, not the model.",
   "license": "MIT",
   "repository": {
     "type": "git",

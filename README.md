@@ -1,372 +1,214 @@
 # pedalion-ci
 
-πηδάλιον — the steering-oar of an ancient ship. It names the part, not the pilot: your
-repository holds the helm and steers through this one.
+**A green build means the tests that arrived with the change pass.** That was close enough for as
+long as a person wrote the change and, separately, thought about how to catch themselves being
+wrong — and a second person read both. An agent writes the fix and its test in one pass and does
+not get tired, so the question every branch ruleset answers by running CI — *is this diff safe to
+merge?* — is now being answered by the diff.
 
-[![CI](https://github.com/promontory-studio/pedalion-ci/actions/workflows/ci.yml/badge.svg)](https://github.com/promontory-studio/pedalion-ci/actions/workflows/ci.yml)
-[![Community Health](https://img.shields.io/badge/dynamic/json?url=https://api.github.com/repos/promontory-studio/pedalion-ci/community/profile&query=$.health_percentage&suffix=%25&label=community%20health)](https://github.com/promontory-studio/pedalion-ci/community)
+The usual substitutes are a required human approval that is a rubber stamp by the third pull
+request of the morning, a `CODEOWNERS` entry naming whoever is least likely to refuse, or leaving
+the agent in `dry-run` forever and merging by hand — which is the honest one, and is why most
+agents never leave it.
 
-Reusable GitHub Actions workflows for letting an agent and a dependency bot open pull requests
-against your repository without letting them quietly widen what they are allowed to change.
+> **Here to use it?** [USAGE.md](USAGE.md) is what you paste into your own repository.
+> [REFERENCE.md](REFERENCE.md) is every input, every secret and every default.
 
-Four workflows and two composite actions, each callable from any repository under any owner:
+## What this is for
 
-| | What it does |
+A change you cannot check by reading it is one you cannot safely merge. Reading is the part that
+does not scale — not the writing, and not the CI.
+
+> An **automated pull request** is one whose author cannot be argued with: a coding agent, or a
+> dependency bot. It differs from a person's in exactly one way that matters — it is not
+> rate-limited by the author's attention, so every safeguard that worked only because someone
+> would eventually have noticed has quietly stopped working.
+
+These are four reusable GitHub Actions workflows. Each makes a check a reader would have made, in a
+place the thing being checked cannot reach:
+
+| The check a reader would have made | Why re-running CI does not make it | Where it is made instead |
+|---|---|---|
+| Does this test actually prove the fix? | The test arrived with the fix and they pass together | **`guard.yml`** rewinds the tree to the base commit, keeps only the new tests, and runs them. They must be **red** there. |
+| Did it widen what it is allowed to change? | The diff includes the file that says what it may change | **`guard.yml`** — `.github/**` and package manifests are forbidden to the agent in every repository, whatever the config says. |
+| Did anything that is not a model agree to this? | The reviewer is the same kind of thing as the author | **`review.yml`** decides the merge in the shell, on an approval that still sits at the head CI tested, with no vetoing label. |
+| Is this shipping because it is good, or because nobody has complained yet? | Silence and a broken error pipeline produce identical evidence | **`promote.yml`** requires a soak window, a green tip, no error report naming a build in the range, and a canary proving the report pipeline is still alive. |
+
+None of the four is sufficient alone, and that is the argument for the set. A proved test says
+nothing about whether the same change rewrote the rules it is judged by. A clean guard says nothing
+about who agreed to merge. An approved merge says nothing about whether what it merged into is fit
+to release. Together they say one sentence that no single check says: *this diff was proved, did
+not widen its own permissions, was agreed to by something that is not a model, and has since sat in
+front of real users without complaint.*
+
+## Proving the fix — `guard.yml`
+
+> Enforced in CI rather than in the agent's prompt: a prompt can be talked out of a rule, a check
+> cannot. — [`src/guard.ts:7`](src/guard.ts)
+
+That sentence is the whole design. Everything a well-behaved agent would do anyway is a rule a
+badly-behaved one can be argued out of, so none of it lives in the prompt.
+
+**The test must have been red.** A fix and its test arriving together prove nothing: the test may
+assert what the code now does rather than what it should do, and it passes either way. So the guard
+restores the base commit over the whole tree *except* the new tests, runs each owning app's suite,
+and requires a failure. A test that passes without its fix is not evidence of the fix; it is
+decoration, and this is the only check here that can tell the difference. It restores `HEAD` in a
+`finally` and removes only paths git tracks, so untracked local work survives a run.
+
+**A bump is exempt; a bug fix is not.** A dependency repair is proven by CI going green on the bump
+itself — that *is* the witness. A bug fix has no such witness, which is why it, and only it, fails
+outright for bringing no test. Not "its proof is skipped": it fails.
+
+**The allow-list is inverse.** A dependency bot's whole job is manifests and workflow pins, so
+those are the only paths it may touch; anything else is not a bump, including paths the agent is
+free to edit. The agent gets the opposite treatment: `.github/**`, `package.json` and
+`package-lock.json` are forbidden to it unconditionally. A change to `.github/**` rewrites the
+rules the agent is judged by, and is never the agent's to make — which is precisely the rule a
+prompt would be most useful for talking its way out of.
+
+**A disabled test is a deleted test.** `.skip`, `.only`, `.todo`, `xit(`, `xdescribe(` added to a
+test file, a test file deleted, or assertions removed from one that already existed — all fail the
+guard. An agent that can quiet the suite can pass every other check in this list.
+
+Also checked: a cap on the agent's diff size, and your own `forbidden` globs. The full contract is
+in [ARCHITECTURE.md](ARCHITECTURE.md).
+
+Applicability is an input (`authors`, `skip-branch-prefixes`), never a job-level `if:`. A job
+skipped by an `if:` reports SKIPPED, and a *required* check that reports SKIPPED blocks the merge
+forever — so the guard always runs and decides for itself whether it has anything to say.
+
+## Deciding the merge — `review.yml`
+
+A model writes the review. The shell decides the merge, and the two are not the same step. The
+merge step re-reads the pull request from the API and requires that the head is still the SHA CI
+tested, that an approval matching `reviewer-pattern` sits at that head, and that no `hold-labels`
+label is present. A review that approved, and a head that has moved since, is not an approval of
+what would merge.
+
+Moving that decision into the prompt is the one change this repository will not take.
+
+Without an App id the merge is skipped entirely, because a merge nobody can attribute is worse than
+one that did not happen. An unconfident verdict takes a third path: the reviewer labels the pull
+request for a human and stops.
+
+**`retarget-base`** exists for a failure that is otherwise silent. A security update is *always*
+raised against the default branch, whatever `dependabot.yml` says. In a repository that promotes
+its integration branch to the default branch whole, merging a bump at the default branch diverges
+the very branch that is supposed to receive it — and nothing announces this until the next
+promotion conflicts. So a bot's pull request raised against the default branch is moved onto the
+integration branch before it is reviewed. The default branch is asked of the API rather than read
+off `github.event`, whose shape depends on the caller's trigger: an absent property interpolates to
+the empty string, and every base would then look like the default branch.
+
+It triggers from `workflow_run`, not from inside CI. A job that waits on the checks of the run it
+belongs to is waiting on itself, and the pull request never merges.
+
+## Earning the release — `promote.yml`
+
+A soak window is a claim that time in front of users is evidence. It is — but only if you would
+have heard about it. **"No errors reported" and "the error reporter is down" are the same
+observation**, and a gate that cannot tell them apart promotes on the second one:
+
+> Checked BEFORE the reports below, because it decides what their absence means: a dead sink and a
+> clean week are the same empty list, and a gate that cannot tell them apart promotes on the first
+> one. — [`src/promotion-gate.ts:24`](src/promotion-gate.ts)
+
+So a caller can nominate a **canary**: a labelled issue in the report repository whose last update
+proves the pipeline is alive. Stale beyond `canary-max-age-hours`, or never updated at all, and the
+promotion is blocked with the reason spelled out — *a quiet soak is not evidence*. A caller with no
+error pipeline leaves the input empty and gets no liveness check, which is the right answer for
+that repository rather than a check that always passes.
+
+The other blockers are ordinary: the head tip has to be older than `soak-hours`, CI has to be green
+on it, and no error report may name a build inside the range being promoted.
+
+`keep-paths` covers files the base branch owns and the head branch must not overwrite — a
+production config that legitimately differs. They are restored from the base *in* the promotion
+pull request rather than excluded from the merge, so the diff a person reads is the diff that
+lands.
+
+This is the half of the repository with the least production history. See below.
+
+## Noticing the silence — `notify-failure.yml`
+
+An unattended workflow fails unattended. The obvious fix — file an issue — produces an inbox that
+files the same issue nightly and is therefore read by nobody, which is the same outcome as filing
+nothing.
+
+So the first failure of a given title opens an issue and every recurrence comments on it. One
+thread per broken thing, carrying its own history, closing when it is fixed. This is the cheapest
+workflow here and the one with the most observable record.
+
+## What it has actually caught
+
+The first commit here is 2026-09-20. The first time another repository called it was 2026-09-21.
+Everything below happened inside **25 hours**, and nothing below is a trend.
+
+| | |
 |---|---|
-| `guard.yml` | Fails an automated pull request that touches a forbidden path, exceeds a diff cap, weakens a test, or adds a test that passes without its own fix |
-| `review.yml` | Reviews a pull request once its CI has finished, approves it when clean, and merges it only when the shell — not the model — agrees |
-| `promote.yml` | Opens the integration → release pull request once the integration branch has soaked quietly |
-| `notify-failure.yml` | Files (or comments on) one issue per failing unattended workflow |
-| `setup-node-ci` | checkout + Node + install, pinned once |
-| `codeql-scan` | CodeQL init + analyze, pinned once |
-
-Nothing here knows anything about the repository calling it. Everything specific to you arrives as
-a `with:` input, a named `secrets:` input, or your own `.github/autopilot.json`. `scripts/no-entity-leak.sh`
-is a required check on this repository and fails the build if that stops being true.
-
-## Why a called workflow, and not a file you copy
-
-Copy CI into five repositories and you have five copies that disagree within a month. A caller
-here is about ten lines with no logic in it, so a diff across repositories stays legible.
-
-Two constraints shape the design, and both bite silently if ignored:
-
-- **`secrets: inherit` does not cross owners.** Every secret below is named and passed explicitly.
-- **`vars.*` are not inherited by a called workflow.** That is why `mode` is an input rather than
-  something read from `vars.AUTOPILOT` inside these files. Your caller reads the variable; these
-  workflows are told the answer.
-
-The `AUTOPILOT` prefix on those variables and secrets names the capability, not this repository —
-it is yours to rename, and nothing here reads it.
-
-## Pin by SHA
-
-```yaml
-uses: OWNER/pedalion-ci/.github/workflows/review.yml@<full-40-char-sha>
-```
-
-A change here reaches nobody until a pin moves, and the pin bump arrives as an ordinary Dependabot
-pull request through your ordinary gate. That is what keeps pins fresh without anyone remembering to.
-
-## Getting started
-
-### 1. `.github/autopilot.json`
-
-Only the guard reads it, and it is read from your repository at run time.
-
-```json
-{
-  "agentAuthor": "my-agent[bot]",
-  "botAuthor": "dependabot[bot]",
-  "maxLines": 400,
-  "forbidden": ["**/*.env", "apps/*/deploy.json", "**/migrations/**"],
-  "apps": [
-    {
-      "path": "apps/web",
-      "run": ["npx", "vitest", "run"],
-      "tests": ["tests/**", "src/**/*.test.ts"],
-      "unitTests": ["tests/unit/**"]
-    }
-  ]
-}
-```
-
-- `agentAuthor` — the login whose commits are constrained. Required; a config that does not parse
-  stops the run, because every default here is "allow".
-- `botAuthor` — the dependency bot. It may touch manifests and workflow files, and it is not asked
-  to prove its tests: it is reconciling a bump, not writing a feature.
-- `forbidden` — extra globs on top of the ones that are always forbidden to the agent:
-  `.github/**`, `**/package.json`, `**/package-lock.json`.
-- `apps[].path` — the app's directory. Empty (or `"."`) is the repository root, which is what a
-  single-package repository wants.
-- `apps[].run` — argv that runs the named test files. The guard appends paths relative to `path`
-  and runs it there.
-- `apps[].unitTests` — the subset cheap enough to re-run at the base commit. That run is how a new
-  test is proved to be a test: if it passes *without* the change, it proves nothing.
-
-The JSON Schema is in [`schema/autopilot.schema.json`](schema/autopilot.schema.json).
-
-### 2. Guard the automated pull requests
-
-```yaml
-# .github/workflows/ci.yml
-  guard:
-    if: github.event_name == 'pull_request'
-    uses: OWNER/pedalion-ci/.github/workflows/guard.yml@<sha>
-    with:
-      base-ref: ${{ github.base_ref }}
-      head-sha: ${{ github.event.pull_request.head.sha }}
-      authors: dependabot[bot],my-agent[bot]
-      pr-author: ${{ github.event.pull_request.user.login }}
-      head-branch: ${{ github.head_ref }}
-      skip-branch-prefixes: promote/
-```
-
-**Filter by author with the `authors` input, never with a job-level `if:`.** A job skipped by a
-job-level `if:` reports SKIPPED, and a *required* check that reports SKIPPED blocks the merge
-forever. `authors` keeps the job running and lets it pass. `skip-branch-prefixes` is the same
-escape for a branch: an automated pull request that is not an agent's work, such as a whole-branch
-promotion, is exempted by head-branch prefix rather than by skipping the job.
-
-**The job id you pick becomes the check name.** A called workflow reports as `<your job id> /
-<its job id>`, so the job above reports as `guard / guard` and that — not the file name — is the
-string your branch ruleset must require. Name the job `autopilot-guard` and require
-`autopilot-guard / guard` instead. See [ARCHITECTURE.md](ARCHITECTURE.md#2-the-job-id-becomes-the-check-name).
-
-### 3. Review and merge
-
-```yaml
-# .github/workflows/autopilot.yml
-on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
-
-permissions:
-  contents: write
-  pull-requests: write
-  issues: write
-  id-token: write
-
-jobs:
-  review:
-    if: >
-      vars.AUTOPILOT != 'off' &&
-      github.event.workflow_run.event == 'pull_request' &&
-      github.event.workflow_run.pull_requests[0] != null
-    uses: OWNER/pedalion-ci/.github/workflows/review.yml@<sha>
-    with:
-      mode: ${{ vars.AUTOPILOT }}
-      pr-number: ${{ github.event.workflow_run.pull_requests[0].number }}
-      head-sha: ${{ github.event.workflow_run.head_sha }}
-      ci-conclusion: ${{ github.event.workflow_run.conclusion }}
-      head-branch: ${{ github.event.workflow_run.head_branch }}
-      app-id: ${{ vars.AUTOPILOT_APP_ID }}
-    secrets:
-      anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
-      app-key: ${{ secrets.AUTOPILOT_APP_KEY }}
-```
-
-**Trigger it from `workflow_run`, not from inside CI.** A job that waits on the checks of the run
-it belongs to is waiting on itself, and the pull request never merges.
-
-`mode` is the whole kill switch: `off` does nothing, `dry-run` reviews and approves, `on` also
-enables auto-merge. The merge is decided by the shell, not the model — it re-reads the pull
-request and requires an approval that still sits at the head CI tested, with no vetoing label.
-
-**`retarget-base` moves a dependency bot's pull request off the default branch.** Security updates
-are always raised against the default branch, whatever `dependabot.yml` targets — and a repository
-that promotes its integration branch whole cannot take a merge there without diverging the branch
-that is supposed to receive it. Set it to the integration branch; empty (the default) leaves every
-base alone.
-
-Two things make it safe, and both are load-bearing:
-
-- It is keyed on `bot-branch-prefix`, not on the author, because the App opens the daily promotion
-  pull request too — from the default branch, into the default branch. Moving that one would stop
-  promotion arriving, with nothing to see.
-- It asks for a rebase as well as changing the base. The branch was cut from the default branch, so
-  a base change alone leaves the pull request reading as *everything the default branch has that the
-  target does not*, including whatever `keep-paths` deliberately holds back on it.
-
-**A merge needs a GitHub App.** Without `app-id` and `app-key` the merge step is skipped, because
-a merge pushed with `GITHUB_TOKEN` starts no downstream workflow — your release job would never
-fire. Everything else works with `GITHUB_TOKEN` alone.
-
-### 4. Promote on a soak
-
-```yaml
-  promote:
-    permissions:
-      contents: write
-      pull-requests: write
-    uses: OWNER/pedalion-ci/.github/workflows/promote.yml@<sha>
-    with:
-      mode: ${{ vars.AUTOPILOT_PROMOTE }}
-      base-branch: main
-      head-branch: dev
-      soak-hours: 24
-      keep-paths: |
-        apps/web/deploy.json
-      app-id: ${{ vars.AUTOPILOT_APP_ID }}
-    secrets:
-      app-key: ${{ secrets.AUTOPILOT_APP_KEY }}
-```
-
-The gate blocks unless the head branch has commits to promote, its tip is older than `soak-hours`,
-CI is green on that tip, and — if you point `report-repo` at wherever runtime errors are filed — no
-report since the base names a build in the range. Set `canary-label` as well and the gate also
-refuses to promote while the report pipeline itself has gone quiet, which is the failure that makes
-"no errors reported" meaningless.
-
-`keep-paths` are restored from the base branch, for the files that are deliberately different
-there. A promotion opens a pull request; it never pushes to the base branch.
-
-### 5. Hear about failures
-
-```yaml
-  notify-failure:
-    needs: [build, deploy]
-    if: always() && contains(needs.*.result, 'failure')
-    permissions:
-      issues: write
-    uses: OWNER/pedalion-ci/.github/workflows/notify-failure.yml@<sha>
-    with:
-      title: Nightly backup failed
-      context: There is no verified recent snapshot until this passes.
-```
-
-It files on the calling repository by default. Point `issue-repo` (plus `app-id`) somewhere else if
-your failures belong in a different tracker.
-
-## Permissions
-
-A called job that asks for a permission the caller did not grant fails the **whole caller
-workflow** before any job starts, so what each one needs is part of its contract:
-
-| Workflow | What the calling job must grant |
-|---|---|
-| `guard.yml` | nothing |
-| `notify-failure.yml` | nothing, unless it files on the calling repository — then `issues: write` |
-| `review.yml` | `contents: write`, `pull-requests: write`, `issues: write`, `id-token: write` |
-| `promote.yml` | `contents: write`, `pull-requests: write` |
-
-Grant them on the calling job rather than the whole workflow, so a sibling job does not inherit a
-token it has no use for.
-
-## Reference: every input
-
-Required inputs have no default. Everything else is optional and behaves as listed when omitted.
-
-### `guard.yml`
-
-| Input | Required | Default | What it does |
-|---|---|---|---|
-| `base-ref` | yes | | Branch the pull request merges into. The diff and the base-commit test re-run are both against it. |
-| `head-sha` | yes | | Commit to check. The pull request head, not the merge commit. |
-| `authors` | | `""` | Comma-separated logins the guard applies to. Empty applies it to everyone. |
-| `pr-author` | | `""` | Login that opened the pull request. On a push it interpolates to empty, which is in nobody's `authors` list, so the job passes as "nothing to check". |
-| `head-branch` | | `""` | Branch the pull request comes from. Only needed with `skip-branch-prefixes`. |
-| `skip-branch-prefixes` | | `""` | Comma-separated head-branch prefixes the guard does not apply to. |
-| `config-path` | | `.github/autopilot.json` | Where the caller's config lives. |
-| `node-version` | | `22` | Node used to run `src/` and the caller's tests. |
-| `install` | | `npm ci` | How to install the caller's dependencies so its tests can run. |
-
-No secrets, and no permissions.
-
-### `review.yml`
-
-| Input | Required | Default | What it does |
-|---|---|---|---|
-| `mode` | | `dry-run` | `off` does nothing, `dry-run` reviews and approves, `on` also enables auto-merge. |
-| `pr-number` | yes | | Pull request to review. |
-| `head-sha` | yes | | Head the CI run tested. The merge refuses to fire at any other head. |
-| `ci-conclusion` | yes | | Conclusion of that CI run. Anything but `success` skips the review and, on an automated branch, may dispatch a repair. |
-| `head-branch` | | `""` | Branch the pull request comes from. Needed for `retarget-base` and the repair dispatch. |
-| `reviewer-pattern` | | `claude` | Regex an approving review's author must match for the merge to fire. |
-| `merge-method` | | `squash` | `squash`, `merge` or `rebase`. |
-| `merge-method-by-base` | | `{}` | JSON overriding the method per base branch, e.g. `{"main":"merge"}`. |
-| `hold-labels` | | `hold,autopilot:needs-human` | Comma-separated labels that veto the merge. |
-| `needs-human-label` | | `autopilot:needs-human` | Label applied when the review declines to approve. |
-| `allowed-bots` | | `dependabot[bot]` | Bot logins whose pull requests the review is allowed to act on at all. |
-| `retarget-base` | | `""` | Branch to move a bot pull request onto when it was raised against the default branch. Empty leaves every base alone. |
-| `model` | | `""` | Overrides the review model. Empty uses the action's default. |
-| `app-id` | | `""` | GitHub App to merge as. Without one the merge is skipped, because a merge pushed with `GITHUB_TOKEN` starts no downstream workflow. |
-| `repair-repo` | | `""` | `owner/name` to send a `repository_dispatch` to when CI failed on an automated branch. Empty sends nothing. |
-| `repair-event` | | `autopilot-repair` | `event_type` of that dispatch. |
-| `bot-branch-prefix` | | `dependabot/` | Prefix of the dependency bot's branches. Retarget and repair are keyed on it, not on the author. |
-
-| Secret | Required | What it does |
-|---|---|---|
-| `anthropic-api-key` | yes | The review model's key. |
-| `app-key` | | Private key for `app-id`. Both or neither. |
-| `repair-token` | | Used for the repair dispatch when no App is configured. |
-
-### `promote.yml`
-
-| Input | Required | Default | What it does |
-|---|---|---|---|
-| `mode` | | `dry-run` | `off` does nothing; anything else opens the pull request. |
-| `base-branch` | | `main` | Branch being promoted into. |
-| `head-branch` | | `dev` | Branch being promoted. |
-| `branch-prefix` | | `promote/` | Prefix of the branch the promotion is opened from. |
-| `soak-hours` | | `24` | How long the head tip must have sat untouched and green. |
-| `keep-paths` | | `""` | Newline-separated paths restored from the base branch, for files deliberately different there. |
-| `report-repo` | | `""` | `owner/name` of where runtime error reports are filed. Empty skips that half of the gate. |
-| `report-label` | | `client-error` | Label identifying those reports. |
-| `canary-label` | | `""` | Label on the issue that proves the report pipeline is still alive. Empty skips the liveness check, which a caller with no pipeline wants. |
-| `canary-max-age-hours` | | `8` | How stale that canary may be before "no errors reported" stops meaning anything. |
-| `app-id` | | `""` | App to open the pull request as, so its checks actually run. |
-| `node-version` | | `22` | Node used for the gate. |
-
-| Secret | Required | What it does |
-|---|---|---|
-| `app-key` | | Private key for `app-id`. |
-| `report-token` | | Reads `report-repo` when the App cannot. It outranks the App token, because a caller only supplies it when the App cannot reach that repository. |
-
-### `notify-failure.yml`
-
-| Input | Required | Default | What it does |
-|---|---|---|---|
-| `title` | yes | | Issue title. A recurrence comments on the open issue with this exact title rather than filing another. |
-| `context` | | `""` | One line naming what failed, shown under the run link. |
-| `issue-repo` | | `""` | Where to file. Empty files on the calling repository. |
-| `label` | | `ci-failure` | Label applied to the issue. |
-| `assignee` | | `""` | Login assigned to it. |
-| `app-id` | | `""` | Needed only to file into another repository. |
-
-| Secret | Required | What it does |
-|---|---|---|
-| `app-key` | | Private key for `app-id`. |
-| `issue-token` | | Files into `issue-repo` when no App is configured. |
-
-### `actions/setup-node-ci`
-
-checkout + Node + install, pinned once. Used by every workflow here; usable directly with
-`uses: OWNER/pedalion-ci/.github/actions/setup-node-ci@<sha>`.
-
-| Input | Default | What it does |
-|---|---|---|
-| `repository` | `""` | Repository to check out. Empty is the one running the job. |
-| `ref` | `""` | Ref or SHA to check out. |
-| `path` | `""` | Directory to check out into. |
-| `fetch-depth` | `1` | History depth. `0` fetches all of it, which a diff against a base branch needs. |
-| `token` | `${{ github.token }}` | Token for the checkout. |
-| `node-version` | `22` | Node to set up. |
-| `install` | `npm ci` | Install command. Empty skips installation entirely. |
-| `working-directory` | `.` | Where the install command runs. |
-
-`npm ci` falls back to `npm install` on failure, deliberately — see
-[ARCHITECTURE.md](ARCHITECTURE.md#5-four-things-that-look-like-bugs).
-
-### `actions/codeql-scan`
-
-| Input | Default | What it does |
-|---|---|---|
-| `language` | `javascript-typescript` | CodeQL language. |
-| `queries` | `""` | Extra query suites, e.g. `security-extended`. |
-| `build-mode` | `none` | CodeQL build mode. |
-
-## What the guard actually checks
-
-Against the base branch, for commits authored by `agentAuthor`:
-
-1. **Forbidden paths** — `.github/**` and package manifests always, plus your `forbidden` globs.
-   The dependency bot is exempt for manifests and workflow files.
-2. **Diff cap** — total changed lines over `maxLines`.
-3. **Weakened tests** — `.skip`, `.only`, `.todo`, `xit(`, `xdescribe(` added to a test file, a
-   test file deleted, or existing test lines removed from one that already existed.
-4. **A fix with no test at all** — an agent commit that is not a dependency bump and brings no new
-   or changed unit test fails outright. Not "its proof is skipped": it fails.
-5. **Tests that prove nothing** — every new or changed unit test is re-run at the base commit. If
-   they all pass there, the change is not proved by them.
-
-Point 1's bot exemption is an *inverse* rule and reads more permissively than it is: the dependency
-bot may touch **only** package manifests and `.github/workflows/*.yml`. Anything else it touches is
-a violation, including paths the agent is free to edit.
-
-Point 5 is the expensive one and the one worth having: it is the difference between "a test was
-added" and "the bug could have been caught".
+| Caller repositories, across 3 owners | **5** (15 workflow files), plus this one calling itself |
+| Workflow runs since wiring | **372** |
+| Bot pull requests the guard actually evaluated | **8** |
+| …of those, blocked | **2** |
+| Pull requests approved and merged with no human in the path | **7** |
+| Failure issues filed | **4**, from **7** filings |
+| Promotion pull requests opened | **0** |
+
+The two blocks were dependency bumps that reached into WebAuthn credential code and a unit test —
+outside the blast radius a bump declares. Both are still open. The four issues came from seven
+filings because three recurrences became comments on an existing thread, which is the dedupe above,
+observable in the timestamps.
+
+Three things the table would otherwise let you believe:
+
+- **Most guard "successes" are nothing.** The job gates on `authors` at the step level, so on a
+  human pull request it runs, exits immediately, and reports success. Forty-six executions in the
+  largest caller; eight real evaluations. Any count that does not separate bot from human
+  overstates this by roughly 13×.
+- **The promotion half has never fired in production.** Nine soak-gate runs, nine times the
+  pull-request step was skipped. Every promotion branch in every caller was raised by a person.
+- **The reviewer itself broke three times in thirty-eight attempts on its first day** — two action
+  failures and a checkout failure. Which is the argument for `notify-failure.yml`, and is how three
+  of those four issues got filed.
+
+The expensive check is the base-commit re-run, and it is the one the whole argument rests on: that
+a test which passes without its fix is worth failing a build over. **It has not yet fired in
+anger.** Every block so far has been a path violation, which is the cheap check. Until the rewind
+rejects something real, what is above is an argument, not a result.
+
+Not claimed, because nothing here measures it: time saved, review latency, cost, pull requests per
+hour. Nor that either blocked bump was actually harmful — only that it was out of bounds.
+
+## On the name
+
+**Pedalion** (πηδάλιον) is the steering-oar of an ancient ship: the blade over the stern, not the
+hand on it. It names the part and not the pilot, which is the design position rather than a
+flourish — your repository holds the helm. Every policy arrives as a `with:` input, a named
+`secrets:` input, or your own `.github/autopilot.json`. Nothing here knows who is calling it, and
+`scripts/no-entity-leak.sh` is a required check that fails the build if that stops being true.
+
+Its one famous prior use is *The Rudder* (Πηδάλιον), the 1800 Greek Orthodox canon collection,
+which also gives it "the authority you steer by".
+
+Cost accepted: no outsider guesses it, so the name needs a one-line gloss wherever it is pinned.
+Callers pin by SHA, so the name is read by people, not machines.
+
+## Two things that bite silently
+
+**`secrets: inherit` does not cross owners**, and `vars.*` are not inherited by a called workflow.
+Every secret here is a named input and `mode` is an input too: your caller reads its own variable
+and tells these workflows the answer. A workflow that read `vars.AUTOPILOT` itself would read an
+empty string in every caller outside its own owner, and silently do nothing.
+
+**A change here reaches nobody until a pin moves.** Callers pin a full commit SHA, so releasing is
+not deploying — the bump arrives later as an ordinary Dependabot pull request and goes through the
+caller's own gate, guard included. Which is also why a renamed input breaks people not today but on
+the bump they had no reason to read carefully.
+
+Copy CI into five repositories instead and you have five copies that disagree within a month. A
+caller here is about ten lines with no logic in it, so a diff across repositories stays legible.
+[USAGE.md](USAGE.md) has those ten lines; [REFERENCE.md](REFERENCE.md) has every input.
 
 ## Contributing
 
