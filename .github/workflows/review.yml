@@ -212,7 +212,7 @@ jobs:
           persist-credentials: false
 
       - if: steps.bump.outputs.no-review != 'true'
-        uses: anthropics/claude-code-action@b949468893d8bba436c9c71ea860b1f5f344804e # v1
+        uses: anthropics/claude-code-action@cfc3eb22bfed5c26ef66e3223c982af27e4524de # v1
         with:
           anthropic_api_key: ${{ secrets.anthropic-api-key }}
           allowed_bots: ${{ inputs.allowed-bots }}
