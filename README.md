@@ -62,10 +62,12 @@ outright for bringing no test. Not "its proof is skipped": it fails.
 
 **The allow-list is inverse.** A dependency bot's whole job is manifests and workflow pins, so
 those are the only paths it may touch; anything else is not a bump, including paths the agent is
-free to edit. The agent gets the opposite treatment: `.github/**`, `package.json` and
-`package-lock.json` are forbidden to it unconditionally. A change to `.github/**` rewrites the
-rules the agent is judged by, and is never the agent's to make — which is precisely the rule a
-prompt would be most useful for talking its way out of.
+free to edit. The agent gets the opposite treatment: `.github/**` and `package.json` are forbidden
+to it unconditionally. A change to `.github/**` rewrites the rules the agent is judged by, and is
+never the agent's to make — which is precisely the rule a prompt would be most useful for talking
+its way out of. `package-lock.json` is forbidden too, except on the bot's own branch: reconciling
+the lockfile with someone else's bump is the repair's whole job, and its regenerated lines are not
+counted against the agent's diff cap either.
 
 **A disabled test is a deleted test.** `.skip`, `.only`, `.todo`, `xit(`, `xdescribe(` added to a
 test file, a test file deleted, or assertions removed from one that already existed — all fail the

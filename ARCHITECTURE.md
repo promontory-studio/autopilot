@@ -98,7 +98,10 @@ guard run on their machine.
 **The bot allow-list is inverse.** `ALWAYS_FORBIDDEN` lists what the *agent* may never touch.
 `BOT_ALLOWED` lists the only things the *dependency bot* may touch — manifests and workflow files.
 Anything outside that list is a violation. Read as an exemption it looks permissive; it is the
-opposite.
+opposite. The one hole in `ALWAYS_FORBIDDEN` is `package-lock.json` on a branch that already
+carries a bot commit: the agent is repairing that bump, `npm ci` must succeed from clean when it is
+done, and a lockfile it is not allowed to write makes every repair unmergeable by construction. The
+manifest stays forbidden there — which version to declare is the bot's call.
 
 **An agent fix with no unit test fails outright.** Not "its test is not checked" — it fails. A
 dependency repair is proven by CI going green on the bump itself; a bug fix has no such witness, so

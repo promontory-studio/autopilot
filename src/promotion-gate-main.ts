@@ -1,10 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { buildsNamedIn, promotionBlockers } from "./promotion-gate";
-
-const arg = (name: string): string | undefined => {
-  const i = process.argv.indexOf(`--${name}`);
-  return i === -1 ? undefined : process.argv[i + 1];
-};
+import { arg } from "./argv";
+import { buildsNamedIn, promotionBlockers, type Report, reportedBodies } from "./promotion-gate";
 
 const repo = arg("repo");
 const base = arg("base");
@@ -13,6 +9,13 @@ if (!repo || !base || !head) {
   console.error("usage: promotion-gate-main.ts --repo <owner/name> --base <ref> --head <ref> [--dir <path>] [--soak-hours N] [--report-repo <owner/name>] [--report-label L] [--canary-label L] [--canary-max-age-hours N]");
   process.exit(2);
 }
+
+// A gate that cannot reach the API and a gate that is refusing both exited 1, so a broken gate
+// read as a healthy refusal — indefinitely, and silently. Blocked is 1; unable to decide is 3.
+process.on("uncaughtException", (e: Error) => {
+  console.error(`promotion gate failed to reach a verdict: ${e.message}`);
+  process.exit(3);
+});
 
 const dir = arg("dir") ?? process.cwd();
 const run = (cmd: string, ...args: string[]) =>
@@ -27,18 +30,23 @@ const conclusions: (string | null)[] = tip
 
 const reportRepo = arg("report-repo");
 const reportLabel = arg("report-label") ?? "client-error";
-const bodies = (path: string): string[] =>
-  (JSON.parse(run("gh", "api", "--paginate", "--slurp", `${path}&since=${since}`)) as { body: string | null }[][]).flat().map((i) => i.body ?? "");
+const api = <T>(path: string): T[] => (JSON.parse(run("gh", "api", "--paginate", "--slurp", path)) as T[][]).flat();
 
 const reportedBuilds = reportRepo
   ? buildsNamedIn(
-      [...bodies(`repos/${reportRepo}/issues?state=all&labels=${reportLabel}&per_page=100`), ...bodies(`repos/${reportRepo}/issues/comments?per_page=100`)],
+      reportedBodies(
+        // `since` is sound on the reports themselves — a report cannot name a build older than
+        // itself — and wrong on their comments, where an older comment on an in-window report can
+        // still be naming an in-range build.
+        api<Report>(`repos/${reportRepo}/issues?state=open&labels=${reportLabel}&per_page=100&since=${since}`),
+        (n) => api<{ body: string | null }>(`repos/${reportRepo}/issues/${n}/comments?per_page=100`),
+      ),
       repo,
     )
   : [];
 
-// Closed issues included, sorted by update: a canary is closed by hand once its comment list is
-// long, and the run that closed it still proved the pipeline alive.
+// The canary's closed issues are included, sorted by update: a canary is closed by hand once its
+// comment list is long, and the run that closed it still proved the pipeline alive.
 const canaryLabel = arg("canary-label");
 let canaryAt: number | null | undefined;
 if (canaryLabel && reportRepo) {

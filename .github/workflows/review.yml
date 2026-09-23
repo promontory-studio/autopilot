@@ -73,6 +73,19 @@ on:
       repair-event:
         type: string
         default: autopilot-repair
+      no-review-update-types:
+        description: >
+          Comma-separated dependency update types (`minor,patch`) that may merge on green CI with
+          no model review. Empty — the default — reviews every bump, as before. A branch carrying
+          any commit that is not the bot's own signed work is reviewed whatever is named here.
+        type: string
+        default: ""
+      no-review-branch-prefixes:
+        description: >
+          Comma-separated head-branch prefixes whose bumps may merge with no model review whatever
+          the update type, for an ecosystem whose whole diff is a pin. Empty exempts nothing.
+        type: string
+        default: ""
       bot-branch-prefix:
         description: >
           Prefix of the branches the dependency bot opens. Both the retarget and the repair below
@@ -141,13 +154,65 @@ jobs:
             "Moved onto \`$TARGET\`, because \`$DEFAULT\` receives \`$TARGET\` whole and a merge here would diverge it." \
             "@dependabot rebase")"
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      # Every conjunct keeps an existing path byte-identical. `dry-run` and a caller with no App
+      # both still review: in either, the merge below cannot fire, so skipping the review would
+      # make the whole workflow a silent no-op rather than a cheaper one. A red bump is the repair
+      # lane's, not this one's.
+      - name: Could this bump skip the review?
+        id: lane
+        if: >
+          inputs.mode == 'on' && steps.app.outputs.token != '' &&
+          inputs.ci-conclusion == 'success' &&
+          startsWith(inputs.head-branch, inputs.bot-branch-prefix) &&
+          (inputs.no-review-update-types != '' || inputs.no-review-branch-prefixes != '')
+        run: echo "ask=true" >> "$GITHUB_OUTPUT"
+
+      # Self-locating: the `job` context describes the workflow this job came from, the `github`
+      # context the caller's. Checked out beside the caller, which the next step then replaces.
+      - if: steps.lane.outputs.ask == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .pedalion-host
+          persist-credentials: false
+      - if: steps.lane.outputs.ask == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+      - if: steps.lane.outputs.ask == 'true'
+        working-directory: .pedalion-host
+        run: npm ci
+
+      - name: Does this bump need judgement?
+        id: bump
+        if: steps.lane.outputs.ask == 'true'
+        working-directory: .pedalion-host
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          PR: ${{ inputs.pr-number }}
+          TYPES: ${{ inputs.no-review-update-types }}
+          PREFIXES: ${{ inputs.no-review-branch-prefixes }}
+        run: |
+          set -euo pipefail
+          reason=$(npx tsx src/bump-main.ts --repo "$GITHUB_REPOSITORY" --pr "$PR" \
+            --no-review-types "$TYPES" --no-review-branch-prefixes "$PREFIXES")
+          if [ -z "$reason" ]; then
+            echo "::notice::merging on green CI with no model review"
+            echo "no-review=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::reviewing: $reason"
+          fi
+
+      - if: steps.bump.outputs.no-review != 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ inputs.head-sha }}
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: anthropics/claude-code-action@b949468893d8bba436c9c71ea860b1f5f344804e # v1
+      - if: steps.bump.outputs.no-review != 'true'
+        uses: anthropics/claude-code-action@b949468893d8bba436c9c71ea860b1f5f344804e # v1
         with:
           anthropic_api_key: ${{ secrets.anthropic-api-key }}
           allowed_bots: ${{ inputs.allowed-bots }}
@@ -182,18 +247,21 @@ jobs:
           HEAD_SHA: ${{ inputs.head-sha }}
           PATTERN: ${{ inputs.reviewer-pattern }}
           HOLD: ${{ inputs.hold-labels }}
+          NO_REVIEW: ${{ steps.bump.outputs.no-review }}
           METHOD: ${{ inputs.merge-method }}
           BY_BASE: ${{ inputs.merge-method-by-base }}
         run: |
           set -euo pipefail
           pr=$(gh pr view "$PR" -R "$GITHUB_REPOSITORY" --json labels,headRefOid,latestReviews,baseRefName)
-          approved=$(jq --arg sha "$HEAD_SHA" --arg p "$PATTERN" \
-            '.headRefOid == $sha and any(.latestReviews[]; .state == "APPROVED" and (.author.login | test($p)))' <<<"$pr")
+          # Three separate properties, deliberately not one boolean. Only the approval can be
+          # waived: the head must still be the one CI tested, and a hold label vetoes either way.
+          head_ok=$(jq --arg sha "$HEAD_SHA" '.headRefOid == $sha' <<<"$pr")
+          approved=$(jq --arg p "$PATTERN" 'any(.latestReviews[]; .state == "APPROVED" and (.author.login | test($p)))' <<<"$pr")
           held=$(jq --arg h "$HOLD" '[$h | split(",")[]] as $bad | any(.labels[].name; . as $l | $bad | index($l))' <<<"$pr")
           base=$(jq -r .baseRefName <<<"$pr")
           method=$(jq -r --arg b "$base" --arg d "$METHOD" '.[$b] // $d' <<<"$BY_BASE")
-          echo "approved=$approved held=$held base=$base method=$method"
-          if [ "$approved" = true ] && [ "$held" != true ]; then
+          echo "head_ok=$head_ok approved=$approved no_review=${NO_REVIEW:-} held=$held base=$base method=$method"
+          if [ "$head_ok" = true ] && [ "$held" != true ] && { [ "$approved" = true ] || [ "${NO_REVIEW:-}" = true ]; }; then
             gh pr merge "$PR" -R "$GITHUB_REPOSITORY" --auto "--$method" --delete-branch
           fi
 

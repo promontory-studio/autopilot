@@ -42,6 +42,8 @@ No secrets, and no permissions.
 | `repair-repo` | | `""` | `owner/name` to send a `repository_dispatch` to when CI failed on an automated branch. Empty sends nothing. |
 | `repair-event` | | `autopilot-repair` | `event_type` of that dispatch. |
 | `bot-branch-prefix` | | `dependabot/` | Prefix of the dependency bot's branches. Retarget and repair are keyed on it, not on the author. |
+| `no-review-update-types` | | `""` | Update types (`minor,patch`) that may merge on green CI with no model review. Empty reviews every bump. |
+| `no-review-branch-prefixes` | | `""` | Head-branch prefixes whose bumps skip the review whatever the update type. Empty exempts nothing. |
 
 | Secret | Required | What it does |
 |---|---|---|

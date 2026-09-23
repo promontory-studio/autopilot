@@ -53,6 +53,42 @@ describe("violations", () => {
     ]);
   });
 
+  it("lets the agent reconcile the lockfile on the bump it is repairing", () => {
+    const bump = change({ author: "bumper[bot]", path: "package.json" });
+    expect(violations([bump, change({ path: "package-lock.json" })], config)).toEqual([]);
+  });
+
+  it("still forbids the agent the lockfile when there is no bump to repair", () => {
+    expect(violations([...fix, change({ path: "package-lock.json" })], config)).toContain("agent[bot] may not touch package-lock.json");
+  });
+
+  it("still forbids the agent the manifest while repairing, because the declared version is the bot's", () => {
+    const bump = change({ author: "bumper[bot]", path: "package-lock.json" });
+    expect(violations([bump, change({ path: "package.json" })], config)).toContain("agent[bot] may not touch package.json");
+  });
+
+  it("still forbids the agent the rules it is judged by while repairing", () => {
+    const bump = change({ author: "bumper[bot]", path: "package-lock.json" });
+    expect(violations([bump, change({ path: ".github/workflows/ci.yml" })], config)).toContain(
+      "agent[bot] may not touch .github/workflows/ci.yml",
+    );
+  });
+
+  it("still honours a caller that forbids the lockfile itself", () => {
+    const strict = parseConfig(JSON.stringify({ agentAuthor: "agent[bot]", botAuthor: "bumper[bot]", forbidden: ["**/package-lock.json"] }));
+    const bump = change({ author: "bumper[bot]", path: "package.json" });
+    expect(violations([bump, change({ path: "package-lock.json" })], strict)).toContain("agent[bot] may not touch package-lock.json");
+  });
+
+  it("does not count a regenerated lockfile against the agent's cap while repairing", () => {
+    const bump = change({ author: "bumper[bot]", path: "package.json" });
+    expect(violations([bump, change({ path: "package-lock.json", added: 3000 })], config)).toEqual([]);
+  });
+
+  it("counts the lockfile against the cap when there is no bump to repair", () => {
+    expect(violations([...fix, change({ path: "package-lock.json", added: 3000 })], config)).toContain("agent diff is 3002 lines (cap 400)");
+  });
+
   it("stops the agent deleting, shrinking or weakening a test", () => {
     expect(violations([...fix, change({ status: "D", path: "apps/one/tests/unit/b.test.ts" })], config)).toContain(
       "apps/one/tests/unit/b.test.ts: deletes a test file",
