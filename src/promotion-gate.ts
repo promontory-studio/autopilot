@@ -34,6 +34,28 @@ export function promotionBlockers({ range, tipTime, now, soakHours, ciGreen, rep
   return out;
 }
 
+export type Report = {
+  number: number;
+  state: string;
+  body?: string | null;
+  // Present only on a pull request. The issues endpoint returns those too, and a pull request is
+  // not an error report.
+  pull_request?: unknown;
+};
+
+// The bodies that count against a promotion. Closed reports are dropped: closing one bumps the
+// `updated_at` that the caller's `since` window filters on, so a triaged report would sit in the
+// window forever and the only thing that could clear it is the promotion it is blocking.
+//
+// `commentsOf` is injected and called lazily, for surviving reports only — a recurrence arrives as
+// a comment, so comments must still be read, but reading them for every report in the backlog is
+// what made this a repository-wide sweep.
+export const reportedBodies = (reports: Report[], commentsOf: (issue: number) => { body?: string | null }[]): string[] =>
+  reports
+    .filter((r) => r.state === "open" && !r.pull_request)
+    .flatMap((r) => [r as { body?: string | null }, ...commentsOf(r.number)])
+    .map((i) => i.body ?? "");
+
 // Reports name their build as `<owner>/<repo>@<sha>`; the repository is an input because this
 // utility has no idea which one it is gating.
 export const buildsNamedIn = (bodies: string[], repo: string): string[] => {

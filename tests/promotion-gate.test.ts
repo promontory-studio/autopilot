@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildsNamedIn, promotionBlockers, type Soak } from "../src/promotion-gate";
+import { buildsNamedIn, promotionBlockers, type Report, reportedBodies, type Soak } from "../src/promotion-gate";
 
 const HOUR = 3_600_000;
 const now = Date.parse("2026-01-10T00:00:00Z");
@@ -67,5 +67,57 @@ describe("buildsNamedIn", () => {
 
   it("does not let a repository name containing regex characters match the wrong thing", () => {
     expect(buildsNamedIn(["a.c/d@abc1234"], "a+c/d")).toEqual([]);
+  });
+});
+
+// One open report naming a build, the shape the gate is fed. Every case below changes one thing.
+const report = (over: Partial<Report> = {}): Report => ({ number: 1, state: "open", body: "owner/thing@abc1234", ...over });
+const noComments = () => [];
+
+describe("reportedBodies", () => {
+  it("counts an open report's body", () => {
+    expect(reportedBodies([report()], noComments)).toEqual(["owner/thing@abc1234"]);
+  });
+
+  it("does not count a closed report, whose closing is what keeps it in the since window", () => {
+    expect(reportedBodies([report({ state: "closed" })], noComments)).toEqual([]);
+  });
+
+  it("does not count a pull request, which the issues endpoint returns too", () => {
+    expect(reportedBodies([report({ pull_request: { url: "…" } })], noComments)).toEqual([]);
+  });
+
+  it("counts a comment on an open report, because a recurrence arrives as one", () => {
+    expect(reportedBodies([report({ body: "" })], () => [{ body: "owner/thing@def5678" }])).toEqual(["", "owner/thing@def5678"]);
+  });
+
+  it("does not count a comment on a closed report", () => {
+    expect(reportedBodies([report({ state: "closed" })], () => [{ body: "owner/thing@def5678" }])).toEqual([]);
+  });
+
+  it("does not read the comments of a report that cannot block", () => {
+    const asked: number[] = [];
+    reportedBodies([report({ number: 1 }), report({ number: 2, state: "closed" }), report({ number: 3, pull_request: {} })], (n) => {
+      asked.push(n);
+      return [];
+    });
+    expect(asked).toEqual([1]);
+  });
+
+  it("reads a missing body as empty text", () => {
+    expect(reportedBodies([report({ body: null })], noComments)).toEqual([""]);
+  });
+});
+
+describe("the gate a report actually passes through", () => {
+  const gate = (reports: Report[]) =>
+    promotionBlockers({ ...clean, range: ["abc1234def"], reportedBuilds: buildsNamedIn(reportedBodies(reports, noComments), "owner/thing") });
+
+  it("blocks on an open report naming a build in the range", () => {
+    expect(gate([report()])).toEqual(["error reported from build abc1234, which is in the range"]);
+  });
+
+  it("stops blocking once the report is closed, so the promotion that fixes it can go out", () => {
+    expect(gate([report({ state: "closed" })])).toEqual([]);
   });
 });

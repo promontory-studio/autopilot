@@ -154,7 +154,9 @@ jobs:
           set -euo pipefail
           git -C "$GITHUB_WORKSPACE/caller" fetch --quiet origin \
             "${{ inputs.base-branch }}" "${{ inputs.head-branch }}"
-          if npx tsx src/promotion-gate-main.ts \
+          out="$RUNNER_TEMP/gate.txt"
+          status=0
+          npx tsx src/promotion-gate-main.ts \
               --dir "$GITHUB_WORKSPACE/caller" \
               --repo "$GITHUB_REPOSITORY" \
               --base "origin/${{ inputs.base-branch }}" \
@@ -162,9 +164,15 @@ jobs:
               --soak-hours "${{ inputs.soak-hours }}" \
               --canary-max-age-hours "${{ inputs.canary-max-age-hours }}" \
               ${{ inputs.report-repo && format('--report-repo {0} --report-label {1}', inputs.report-repo, inputs.report-label) }} \
-              ${{ inputs.canary-label && format('--canary-label {0}', inputs.canary-label) }}; then
-            echo "go=true" >> "$GITHUB_OUTPUT"
-          fi
+              ${{ inputs.canary-label && format('--canary-label {0}', inputs.canary-label) }} 2>&1 | tee "$out" || status=$?
+          { printf '### Promotion gate\n\n```\n'; cat "$out"; printf '```\n'; } >> "$GITHUB_STEP_SUMMARY"
+          case "$status" in
+            0) echo "go=true" >> "$GITHUB_OUTPUT" ;;
+            # A refusal is the gate working, so the step stays green — but a green run that printed
+            # only into a log nobody opens is how a jammed gate went unnoticed for days.
+            1) while IFS= read -r line; do echo "::notice::$line"; done < "$out" ;;
+            *) echo "::error::the promotion gate could not decide; this is not a refusal"; exit "$status" ;;
+          esac
 
       - name: Open the promotion pull request
         if: steps.gate.outputs.go == 'true'
