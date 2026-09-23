@@ -14,6 +14,40 @@ version and is announced here first.
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-09-23
+
+### Added
+
+- `review.yml` gains `no-review-update-types` and `no-review-branch-prefixes`. A dependency bump
+  whose every commit is the bot's own signed work, and whose update types are all named in the
+  first input — or whose branch matches the second — merges on green CI with no model review at
+  all. Both default to `""`, which reviews every bump exactly as before, so moving a pin to this
+  tag changes nothing until a caller opts in.
+- `src/bump.ts` decides it, from the `updated-dependencies:` trailers the bot signs into each
+  commit. Not the branch name (which carries no *old* version), not the title (a grouped bump's
+  has no versions at all), and not a third-party action. It fails closed in three directions:
+  unknown metadata, an update type nobody exempted, and — ahead of the branch exemption — any
+  commit that is not the pull request author's own signed work, which is what an agent's repair
+  of a bump looks like.
+
+### Fixed
+
+- **The promotion gate no longer deadlocks on a report that was triaged.** It asked for error
+  reports with `state=all` while filtering on `since`, and GitHub's `since` filters on
+  `updated_at` — so *closing* a report bumped it back into the window, where it blocked forever,
+  and the only thing that could have cleared the window was the promotion it was blocking. It now
+  counts open reports only, skips the pull requests the issues endpoint also returns, and reads
+  comments per surviving report instead of sweeping the whole repository unfiltered.
+- **`promote.yml` says why it did not promote.** A refusal is the gate working, so the step is
+  still green — but it printed only into a log nobody opens, which is how a jammed gate goes
+  unnoticed. The blockers are now notices and a step summary. A gate that could not reach the API
+  exits 3 and fails the step, so a broken gate no longer reads as a healthy refusal.
+- **The guard no longer makes every dependency repair unmergeable.** `package-lock.json` was
+  forbidden to the agent unconditionally, while repairing a bump requires writing it; the
+  regenerated lines also counted against the diff cap. Both are now exempt on a branch that
+  already carries a bot commit. `package.json` and `.github/**` stay forbidden there — which
+  version to declare is the bot's call, and the rules the agent is judged by are never its own.
+
 ## [1.2.0] — 2026-09-22
 
 Documentation only. **No workflow, action, input, default, secret or behaviour changed** — moving a
