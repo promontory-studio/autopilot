@@ -1,11 +1,7 @@
 import { execFileSync } from "node:child_process";
+import { arg } from "./argv";
 import { loadConfig } from "./config";
 import { changesSince, redOnBase, testsToProve, violations } from "./guard";
-
-const arg = (name: string): string | undefined => {
-  const i = process.argv.indexOf(`--${name}`);
-  return i === -1 ? undefined : process.argv[i + 1];
-};
 
 const base = arg("base");
 if (!base) {

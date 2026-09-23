@@ -1,10 +1,6 @@
 import { execFileSync } from "node:child_process";
+import { arg } from "./argv";
 import { buildsNamedIn, promotionBlockers } from "./promotion-gate";
-
-const arg = (name: string): string | undefined => {
-  const i = process.argv.indexOf(`--${name}`);
-  return i === -1 ? undefined : process.argv[i + 1];
-};
 
 const repo = arg("repo");
 const base = arg("base");
