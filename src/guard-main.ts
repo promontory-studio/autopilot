@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { arg } from "./argv";
 import { loadConfig } from "./config";
-import { changesSince, redOnBase, testsToProve, violations } from "./guard";
+import { changesSince, isRepair, redOnBase, testsToProve, violations } from "./guard";
 
 const base = arg("base");
 if (!base) {
@@ -20,7 +20,7 @@ const found = violations(changes, config);
 // The repairing bot is exempt from having to prove its tests: it is reconciling someone else's
 // bump, and the test that would go red on base is usually not one it wrote.
 const tests = testsToProve(changes, config);
-const repairing = changes.some((c) => c.author === config.botAuthor);
+const repairing = isRepair(changes, config);
 if (!repairing && tests.length && !redOnBase(repo, base, tests, config))
   found.push(`new tests pass without the fix, so they do not prove it: ${tests.join(", ")}`);
 

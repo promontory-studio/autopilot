@@ -43,7 +43,9 @@ Only the guard reads it, and it is read from your repository at run time.
 - `botAuthor` — the dependency bot. It may touch manifests and workflow files, and it is not asked
   to prove its tests: it is reconciling a bump, not writing a feature.
 - `forbidden` — extra globs on top of the ones that are always forbidden to the agent:
-  `.github/**`, `**/package.json`, `**/package-lock.json`.
+  `.github/**` and `**/package.json`, plus `**/package-lock.json` on every branch but the bot's
+  own. A glob named here is forbidden whatever the agent is doing, so listing the lockfile takes
+  the repair exemption away again.
 - `apps[].path` — the app's directory. Empty (or `"."`) is the repository root, which is what a
   single-package repository wants.
 - `apps[].run` — argv that runs the named test files. The guard appends paths relative to `path`
