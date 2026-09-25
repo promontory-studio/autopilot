@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
-# Thin shim: the shared size/agent-memory/credentials guards live in plover-context, never copied here.
+# Thin shim: the shared size/agent-memory/credentials guards live in the hub, never copied here.
 # Opt in with `git config core.hooksPath .githooks`; external contributors are unaffected.
+#
+# This file names no repository, and reaches the hub only through PLOVER_CONTEXT_DIR or
+# PLOVER_GIT_HOOKS, because scripts/no-entity-leak.sh fails the build on a slug from any one estate —
+# the same rule the reusable workflows here are held to.
+#
 # Which checkout of the hub this shim loads is the one thing it decides, because that choice precedes
 # reading anything from it — a derivation inside guards.sh cannot pick the guards.sh that runs. So it asks
 # git which worktree holds main rather than trusting $HOME/.claude outright: that checkout does hold main
@@ -20,7 +25,7 @@ if [ ! -x "$GUARD" ]; then
   # Fail closed. Skipping silently is the exact failure these guards exist to prevent: an oversized blob
   # or a stray secret reaching history, which then costs a rewrite to undo.
   echo "pre-commit: shared guards not found at $GUARD"
-  echo "pre-commit:   clone pablo-tech/plover-context to ~/.claude, or set PLOVER_GIT_HOOKS."
+  echo "pre-commit:   point PLOVER_CONTEXT_DIR at the hub checkout, or PLOVER_GIT_HOOKS at its git-hooks dir."
   echo "pre-commit: (bypass: git commit --no-verify)"
   exit 1
 fi
